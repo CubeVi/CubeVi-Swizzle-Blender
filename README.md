@@ -46,9 +46,7 @@ TODO 添加一些gif或者演示视频
 
 ## 插件安装教程
 
-- **Blender4.1及以下版本的插件安装教程请[点击这里](Blender4.1OrLow.md)**
-
-- **Blender4.2及以上版本的插件安装教程请[点击这里](Blender4.2OrHigh.md)**
+请参见[教程](doc/usage.md)
 
 ## 插件使用
 
