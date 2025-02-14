@@ -20,7 +20,8 @@ import bpy
 import gpu
 import sys
 from gpu_extras.batch import batch_for_shader
-from mathutils import Matrix
+from bpy_extras import view3d_utils
+from mathutils import Matrix, Vector
 import time
 from gpu_extras.presets import draw_texture_2d
 import math
@@ -28,6 +29,7 @@ import numpy as np
 from PIL import Image
 import os
 from bpy.props import IntProperty
+
 try:
     from win32 import win32file, win32pipe
 except ImportError:
@@ -38,6 +40,7 @@ import json
 import cv2
 import base64
 from hashlib import md5
+
 try:
     from Cryptodome import Random
     from Cryptodome.Cipher import AES
@@ -48,8 +51,11 @@ flag = False
 linenumber = None
 obliquity = None
 deviation = None
+is_drawing = False
+frustum_draw_handler = None
 
 window_name = "Real_time Display"
+
 
 # def initialize_pygame_window(dis_x):
 #     # 初始化 Pygame
@@ -81,16 +87,20 @@ def initialize_cv_window(dis_x):
     cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     cv2.moveWindow(window_name, dis_x, 0)
 
+
 def update_cv_window(window, frame):
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
     cv2.imshow(window_name, frame)
+
 
 # def func to decrypt platform device config information
 
 keycode = "3f5e1a2b4c6d7e8f9a0b1c2d3e4f5a6b"
 
+
 def unpad(data):
     return data[:-(data[-1] if type(data[-1]) == int else ord(data[-1]))]
+
 
 def bytes_to_key(data, salt, output=48):
     assert len(salt) == 8, len(salt)
@@ -102,11 +112,12 @@ def bytes_to_key(data, salt, output=48):
         final_key += key
     return final_key[:output]
 
+
 def decrypt(encrypted, passphrase):
     encrypted = base64.b64decode(encrypted)
     assert encrypted[0:8] == b"Salted__"
     salt = encrypted[8:16]
-    key_iv = bytes_to_key(passphrase, salt, 32+16)
+    key_iv = bytes_to_key(passphrase, salt, 32 + 16)
     key = key_iv[:32]
     iv = key_iv[32:]
     aes = AES.new(key, AES.MODE_CBC, iv)
@@ -115,26 +126,174 @@ def decrypt(encrypted, passphrase):
     data = json.loads(stringData)
     return data
 
+
+class FrustumOperator(bpy.types.Operator):
+    """Show the camera frustum"""
+    bl_idname = "object.frustum"
+    bl_label = "Show Frustum"
+    bl_options = {'REGISTER', 'UNDO'}
+
+
+    def setupCameraFrustumShader(self):
+        """设置绘制相机视锥的着色器"""
+        pass
+
+    def drawCameraFrustum(self, context):
+        """绘制相机视锥"""
+        scene = context.scene
+        camera = scene.camera
+        clip_near = scene.clip_near
+        clip_far = scene.clip_far
+        focal_plane = scene.focal_plane
+
+        # 获取相机视锥的顶点
+        coords_local = self.calculate_frustum_coordinates(camera, context, clip_near, clip_far, focal_plane)
+
+        # 创建视锥可视化
+        self.create_frustum_visualization(context, coords_local, camera)
+
+    def calculate_frustum_coordinates(self, camera, context, clip_near, clip_far, focal_plane):
+        """
+        计算相机视锥的四个顶点，并根据相机的位置和朝向进行转换
+        """
+        # 获取相机的世界矩阵
+        view_matrix = camera.matrix_world.copy()
+        view_frame = camera.data.view_frame(scene=context.scene)
+
+        # 获取视锥体的四个顶点
+        scale = 1.39
+        view_frame_upper_right = view_frame[0]/scale
+        view_frame_lower_right = view_frame[1]/scale
+        view_frame_lower_left = view_frame[2]/scale
+        view_frame_upper_left = view_frame[3]/scale
+        view_frame_distance = abs(view_frame_upper_right[2])/scale
+
+        # 使用世界矩阵对视锥体坐标进行转换
+        coords_local = [
+            # near clipping plane
+            (view_matrix @ (view_frame_lower_right * clip_near)),
+            (view_matrix @ (view_frame_lower_left * clip_near)),
+            (view_matrix @ (view_frame_upper_left * clip_near)),
+            (view_matrix @ (view_frame_upper_right * clip_near)),
+            # far clipping plane
+            (view_matrix @ (view_frame_lower_right * clip_far)),
+            (view_matrix @ (view_frame_lower_left * clip_far)),
+            (view_matrix @ (view_frame_upper_left * clip_far)),
+            (view_matrix @ (view_frame_upper_right * clip_far)),
+            # focal plane
+            (view_matrix @ (view_frame_lower_right * focal_plane)),
+            (view_matrix @ (view_frame_lower_left * focal_plane)),
+            (view_matrix @ (view_frame_upper_left * focal_plane)),
+            (view_matrix @ (view_frame_upper_right * focal_plane))
+        ]
+        return coords_local
+
+    def create_frustum_visualization(self, context, coords_local, camera):
+        """
+        创建视锥可视化 (直接绘制)
+        """
+        # 定义视锥体的边界线
+        frustum_indices_lines = [
+            # near plane
+            (0, 1), (1, 2), (2, 3), (3, 0),
+            # far plane
+            (4, 5), (5, 6), (6, 7), (7, 4),
+            # focal plane
+            (8, 9), (9, 10), (10, 11), (11, 8),
+            # connecting near and far planes
+            (0, 4), (1, 5), (2, 6), (3, 7),
+        ]
+
+        frustum_shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+        batch_lines = batch_for_shader(frustum_shader, 'LINES', {"pos": coords_local}, indices=frustum_indices_lines)
+
+        # 绘制视锥
+        frustum_shader.bind()
+        gpu.state.depth_test_set('LESS_EQUAL')
+        gpu.state.depth_mask_set(True)
+
+        # 绘制视锥的边界
+        frustum_shader.uniform_float("color", (0.3, 0, 0, 1))  # 设置颜色为红色
+        batch_lines.draw(frustum_shader)
+
+        gpu.state.depth_mask_set(False)
+        gpu.state.blend_set('ALPHA')
+
+        # 填充视锥的面
+        frustum_indices_faces = [
+            (0, 1, 2), (0, 2, 3),
+            (4, 5, 6), (4, 6, 7),
+            (0, 4, 5), (0, 5, 1),
+            (1, 5, 6), (1, 6, 2),
+            (2, 6, 7), (2, 7, 3),
+            (3, 7, 4), (3, 4, 0),
+        ]
+        batch_faces = batch_for_shader(frustum_shader, 'TRIS', {"pos": coords_local}, indices=frustum_indices_faces)
+
+        frustum_shader.uniform_float("color", (0.5, 0.5, 0.5, 0.1))  # 半透明灰色
+        batch_faces.draw(frustum_shader)
+
+        gpu.state.depth_test_set('NONE')
+        gpu.state.blend_set('NONE')
+
+    def start(self, context):
+        """开始绘制相机视锥"""
+        # 设置相机视锥和着色器
+        global is_drawing
+        global frustum_draw_handler
+        self.setupCameraFrustumShader()
+
+        # 如果没有绘制处理程序，添加它
+        if is_drawing:
+            bpy.types.SpaceView3D.draw_handler_remove(frustum_draw_handler, 'WINDOW')
+            frustum_draw_handler = None
+            context.area.tag_redraw()
+        else:
+            frustum_draw_handler = bpy.types.SpaceView3D.draw_handler_add(self.drawCameraFrustum, (context,),
+                                                                          'WINDOW', 'POST_VIEW')
+            context.area.tag_redraw()
+        is_drawing = not is_drawing
+
+
+
+    def execute(self, context):
+        """执行操作符"""
+        # 启动或停止视锥的绘制
+        self.start(context)
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        """保持操作符运行并监控事件"""
+        return {'RUNNING_MODAL'}
+
+    def invoke(self, context, event):
+        """在点击按钮时检查是否已经绘制过视锥体"""
+        self.start(context)
+        return {'FINISHED'}
+
+
+
 class connectOperator(bpy.types.Operator):
+    """Connect to the device"""
     bl_idname = "object.connect"
-    bl_label = "connect"
+    bl_label = "Connect"
     bl_options = {'REGISTER', 'UNDO'}
     _handle = None
 
     @classmethod
-    def poll(cls, context:bpy.types.Context):
+    def poll(cls, context: bpy.types.Context):
         if context.scene.camera is not None and flag is False:
             return True
         return False
 
     items = []
 
-    def execute(self, context:bpy.types.Context):
+    def execute(self, context: bpy.types.Context):
         try:
             config_path = os.path.join(os.getenv('APPDATA'), 'OpenstageAI', 'deviceConfig.json')
             with open(config_path, 'r', encoding='utf-8') as f:
                 device_info = json.load(f)
-            
+
             if device_info and 'config' in device_info:
                 global obliquity, linenumber, deviation
                 config = device_info['config']
@@ -142,36 +301,34 @@ class connectOperator(bpy.types.Operator):
                 data = decrypt(config, password)
 
                 configData = data['config']
-                linenumber = configData.get('lineNumber','')
-                obliquity = configData.get('obliquity','')
-                deviation = configData.get('deviation','')
-                self.report({"INFO"},"Connection Successful")
+                linenumber = configData.get('lineNumber', '')
+                obliquity = configData.get('obliquity', '')
+                deviation = configData.get('deviation', '')
+                self.report({"INFO"}, "Connection Successful")
                 return {'FINISHED'}
         except Exception as e:
-            self.report({"INFO"},"Connection Falied")
+            self.report({"INFO"}, "Connection Falied")
             # print("连接失败")
             return {'FINISHED'}
 
 
-
-
 class LFDSaveOperator(bpy.types.Operator):
-    """目前仅支持保存png"""
+    """Save the preview lightfield picture"""
     bl_idname = "object.save"
-    bl_label = "Save LFD Picture"
+    bl_label = "Save LFD Preview Picture"
     bl_options = {'REGISTER', 'UNDO'}
     _handle = None
 
     # 执行操作的前提
     @classmethod
-    def poll(cls, context:bpy.types.Context):
+    def poll(cls, context: bpy.types.Context):
         if context.scene.camera is not None and flag is False:
             return True
         return False
 
     # 数据初始化
     def __init__(self):
-        self.offscreen = None      # 用于单相机纹理的存储
+        self.offscreen = None  # 用于单相机纹理的存储
         self.final_offscreen = None  # 用于存储拼接后的大纹理
         self.display_offscreen = None  # 用于显示纹理的离屏缓冲区
         self.shader = None
@@ -406,7 +563,7 @@ class LFDSaveOperator(bpy.types.Operator):
             fov = 2 * math.atan(1 / self.projection_matrix[1][1])
             f = 1 / math.tan(fov / 2)
             near = (self.projection_matrix[2][3] / (self.projection_matrix[2][2] - 1))
-            camera_size = f * math.tan(fov / 2)
+            # camera_size = f * math.tan(fov / 2)
 
             with gpu.matrix.push_pop():
                 # 重置矩阵 -> 使用标准设备坐标 [-1, 1]
@@ -435,20 +592,31 @@ class LFDSaveOperator(bpy.types.Operator):
                     # 计算中心位置在 NDC 中的坐标
                     center_x = (x_offset + self.render_width / 2) / self.final_width * 2 - 1
                     center_y = (y_offset + self.render_height / 2) / self.final_height * 2 - 1
-
-                    offsetAngle = (0.5 - idx / (40 - 1)) * fov / 2
+                    cameraDistance = context.scene.focal_plane
+                    print(cameraDistance)
+                    cameraSize = cameraDistance * math.tan(fov / 2)
+                    offsetAngle = (0.5 - idx / (40 - 1)) * math.radians(40)
                     # offset = - f * math.tan(offsetAngle)
-                    offset = - f * offsetAngle * 3
+                    offset = cameraDistance * offsetAngle
                     # 计算新的view matrix
                     # direction = self.view_matrix.col[2].xyz.normalized()
                     # new_offset = direction * offset
-                    new_view_matrix = Matrix.Translation((-offset, 0, 0)) @ self.view_matrix
+                    new_view_matrix = Matrix.Translation((offset, 0, 0)) @ self.view_matrix
                     # new_view_matrix = self.view_matrix.copy()
                     # 计算新的projection matrix
                     new_projection_matrix = self.projection_matrix.copy()
-                    new_projection_matrix[0][2] -= offset / (camera_size * (1440 / 2560)) / 3
+                    new_projection_matrix[0][2] += offset / (cameraSize * (1440 / 2560))
 
-                    # print(f"fov={fov}, f={f}, near={near}, offsetAngle={offsetAngle}, offset={offset}")
+                    near = context.scene.clip_near
+                    far = context.scene.clip_far
+                    print(near)
+                    print(far)
+                    clip_1 = -(far+near)/(far-near)
+                    clip_2 = -(2*far*near)/(far-near)
+                    new_projection_matrix[2][2] = clip_1
+                    new_projection_matrix[2][3] = clip_2
+
+                    print(f"fov={fov}, f={f}, near={near},clip1={clip_1},clip2={clip_2} offsetAngle={offsetAngle}, offset={offset}")
                     print(f"第{idx + 1}个纹理，viewMatrix为{new_view_matrix},projectionMatrix为{new_projection_matrix}")
                     # print(f"渲染第 {idx + 1} 张纹理，位置: ({x_offset}, {y_offset})")
 
@@ -467,7 +635,7 @@ class LFDSaveOperator(bpy.types.Operator):
                     self.shader.bind()
                     self.shader.uniform_sampler("image", self.offscreen.texture_color)
                     self.shader.uniform_float("scale", (
-                    self.render_width / self.final_width, self.render_height / self.final_height))
+                        self.render_width / self.final_width, self.render_height / self.final_height))
                     self.shader.uniform_float("offset", (center_x, center_y))
                     self.batch.draw(self.shader)
                     gpu.shader.unbind()
@@ -514,12 +682,11 @@ class LFDSaveOperator(bpy.types.Operator):
                 else:
                     print("display_shader 未初始化，无法绑定。")
 
-
             # 假设参数
             np.set_printoptions(threshold=np.inf)
             s = time.time()
             width, height, channels = 1440, 2560, 4
-            padding = 0 # 每行有 16 字节的填充
+            padding = 0  # 每行有 16 字节的填充
             stride_row = width * channels + padding  # 每行的实际字节数
 
             # 创建一个模拟的非连续存储的 buffer
@@ -550,7 +717,420 @@ class LFDSaveOperator(bpy.types.Operator):
 
             e = time.time()
             # print(f"time is {e - s}")
-            self.report({'INFO'},"Picture saved successfully")
+            self.report({'INFO'}, "Picture saved successfully")
+
+    # 点击后调用该方法
+    def execute(self, context):
+        # 判断离屏渲染
+        if not self.setup_offscreen_rendering():
+            return {'CANCELLED'}
+
+        # 判断着色器设置
+        if not self.setup_shader():
+            return {'CANCELLED'}
+
+        # 设置用于清除缓冲区的着色器
+        self.setup_clear_shader()
+
+        # 设置用于显示 final_offscreen 的 display_offscreen 着色器
+        if not self.setup_display_shader():
+            return {'CANCELLED'}
+
+        # 渲染和拼接纹理
+        self.render_quilt(context)
+
+        self.save()
+
+        return {'FINISHED'}
+
+    # 在execute之前执行这个方法，用作初始化
+    def invoke(self, context, event):
+        return self.execute(context)
+
+
+class QuiltSaveOperator(bpy.types.Operator):
+    """Save the preview quilt picture"""
+    bl_idname = "object.quilt_save"
+    bl_label = "Save Quilt Preview Picture"
+    bl_options = {'REGISTER', 'UNDO'}
+    _handle = None
+
+    # 执行操作的前提
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        if context.scene.camera is not None and flag is False:
+            return True
+        return False
+
+    # 数据初始化
+    def __init__(self):
+        self.offscreen = None  # 用于单相机纹理的存储
+        self.final_offscreen = None  # 用于存储拼接后的大纹理
+        self.display_offscreen = None  # 用于显示纹理的离屏缓冲区
+        self.shader = None
+        self.clear_shader = None
+        self.batch = None
+        self.clear_batch = None
+        self.display_batch = None  # 新增，用于 display_shader
+        self.view_matrix = None
+        self.projection_matrix = None
+        self.render_width = 540  # 每张纹理的宽度
+        self.render_height = 960  # 每张纹理的高度
+        self.grid_rows = 5
+        self.grid_cols = 8
+        self.final_width = self.render_width * self.grid_cols
+        self.final_height = self.render_height * self.grid_rows
+        self.display_shader = None  # 用于显示最终纹理的着色器
+
+    def setup_offscreen_rendering(self):
+        """设置小纹理和大纹理的 Offscreen"""
+        try:
+            # 单个纹理的 Offscreen
+            self.offscreen = gpu.types.GPUOffScreen(self.render_width, self.render_height)
+            # print(f"单个 Offscreen 创建成功: {self.render_width}x{self.render_height}")
+
+            # 最终拼接的大纹理 Offscreen
+            self.final_offscreen = gpu.types.GPUOffScreen(self.final_width, self.final_height)
+            # print(f"最终拼接 Offscreen 创建成功: {self.final_width}x{self.final_height}")
+
+            # 用于显示纹理的 Offscreen（展示纹理）
+            self.display_offscreen = gpu.types.GPUOffScreen(1440, 2560)
+            # print(f"展示的交织 OffScreen 创建成功")
+
+            return True
+        except Exception as e:
+            self.report({'ERROR'}, f"创建离屏缓冲区失败: {e}")
+            print(f"创建离屏缓冲区失败: {e}")
+            return False
+
+    def setup_shader(self):
+        """创建用于绘制纹理的着色器"""
+        vertex_shader = '''
+            uniform vec2 scale;
+            uniform vec2 offset;
+            in vec2 pos;
+            in vec2 texCoord;
+            out vec2 fragTexCoord;
+
+            void main()
+            {
+                gl_Position = vec4(pos * scale + offset, 0.0, 1.0);
+                fragTexCoord = texCoord;
+            }
+        '''
+
+        fragment_shader = '''
+            uniform sampler2D image;
+            in vec2 fragTexCoord;
+            out vec4 FragColor;
+            
+            vec3 linear_to_srgb(vec3 linear) {
+                bvec3 cutoff = lessThan(linear, vec3(0.0031308));
+                vec3 higher = vec3(1.055) * pow(linear, vec3(1.0 / 2.4)) - vec3(0.055);
+                vec3 lower = linear * vec3(12.92);
+                return mix(higher, lower, cutoff);
+            }
+            
+            void main()
+            {
+                vec4 color = texture(image, fragTexCoord);
+                FragColor = vec4(linear_to_srgb(color.rgb), color.a);
+            }
+        '''
+
+        try:
+            self.shader = gpu.types.GPUShader(vertex_shader, fragment_shader)
+            # print("着色器编译成功")
+        except Exception as e:
+            self.report({'ERROR'}, f"着色器编译失败: {e}")
+            print(f"着色器编译失败: {e}")
+            return False
+
+        # 定义顶点和索引
+        vertices = [
+            (-1, -1, 0, 0),  # Bottom-left
+            (1, -1, 1, 0),  # Bottom-right
+            (1, 1, 1, 1),  # Top-right
+            (-1, 1, 0, 1)  # Top-left
+        ]
+
+        indices = [(0, 1, 2), (2, 3, 0)]
+
+        self.batch = batch_for_shader(
+            self.shader, 'TRIS',
+            {"pos": [v[:2] for v in vertices], "texCoord": [v[2:] for v in vertices]},
+            indices=indices
+        )
+
+        return True
+
+    def setup_display_shader(self):
+        """为 display_offscreen 创建专门的着色器"""
+        vertex_shader = '''
+            in vec2 pos;
+            in vec2 texCoord;
+            out vec2 fragTexCoord;
+
+            void main()
+            {
+                gl_Position = vec4(pos, 0.0, 1.0);
+                fragTexCoord = texCoord;
+            }
+        '''
+
+        fragment_shader = '''
+            uniform sampler2D image1;
+            uniform float _OutputSizeX;
+            uniform float _OutputSizeY;
+            uniform float _Slope;
+            uniform float _X0;
+            uniform float _Interval;
+            uniform float _ImgsCountAll;
+            uniform float _ImgsCountX;
+            uniform float _ImgsCountY;
+            in vec2 fragTexCoord;
+            out vec4 FragColor;
+
+            float get_choice_float(vec2 pos, float bias) {
+                float x = pos.x * _OutputSizeX + 0.5;
+                float y = (1- pos.y) * _OutputSizeY + 0.5;
+                // float y = pos.y * _OutputSizeY + 0.5;
+                float x1 = (x + y * _Slope) * 3.0 + bias;
+                float x_local = mod(x1 + _X0, _Interval);
+                return (x_local / _Interval);
+            }
+
+            vec3 linear_to_srgb(vec3 linear) {
+                bvec3 cutoff = lessThan(linear, vec3(0.0031308));
+                vec3 higher = vec3(1.055) * pow(linear, vec3(1.0 / 2.4)) - vec3(0.055);
+                vec3 lower = linear * vec3(12.92);
+                return mix(higher, lower, cutoff);
+            }
+
+            vec2 get_uv_from_choice(vec2 pos, float choice_float) {
+                float choice = floor(choice_float * _ImgsCountAll);
+                vec2 choice_vec = vec2(
+                _ImgsCountX - 1.0 - mod(choice, _ImgsCountX),  // 从右到左
+                // _ImgsCountY - 1.0 - floor(choice / _ImgsCountX) 
+                floor(choice / _ImgsCountX) // 从下到上
+                );
+
+                vec2 reciprocals = vec2(1.0 / _ImgsCountX, 1.0 / _ImgsCountY);
+                return (choice_vec + pos) * reciprocals;
+            }
+
+            vec4 get_color(vec2 pos, float bias) {
+                float choice_float = get_choice_float(pos, bias);
+                vec2 sel_pos = get_uv_from_choice(pos, choice_float);
+                return texture(image1, sel_pos);
+            }
+
+            void main() {
+                vec4 color = get_color(fragTexCoord, 0.0);
+                color.g = get_color(fragTexCoord, 1.0).g;
+                color.b = get_color(fragTexCoord, 2.0).b;
+                FragColor = vec4(linear_to_srgb(color.rgb), color.a);
+            }
+        '''
+
+        try:
+            self.display_shader = gpu.types.GPUShader(vertex_shader, fragment_shader)
+            # print("display_offscreen 着色器编译成功")
+        except gpu.types.GPUShaderCompilationError as e:
+            self.report({'ERROR'}, f"display_offscreen 着色器编译失败: {e}")
+            print(f"display_offscreen 着色器编译失败: {e}")
+            self.display_shader = None
+            return False
+        except Exception as e:
+            self.report({'ERROR'}, f"display_offscreen 着色器初始化失败: {e}")
+            print(f"display_offscreen 着色器初始化失败: {e}")
+            self.display_shader = None
+            return False
+
+        # 定义顶点和索引，用于绘制显示纹理
+        vertices = [
+            (-1, -1, 0, 0),  # Bottom-left
+            (1, -1, 1, 0),  # Bottom-right
+            (1, 1, 1, 1),  # Top-right
+            (-1, 1, 0, 1)  # Top-left
+        ]
+
+        indices = [(0, 1, 2), (2, 3, 0)]
+
+        self.display_batch = batch_for_shader(
+            self.display_shader, 'TRIS',
+            {"pos": [v[:2] for v in vertices], "texCoord": [v[2:] for v in vertices]},
+            indices=indices
+        )
+
+        return True
+
+    def setup_clear_shader(self):
+        """创建用于清除颜色缓冲区的简单着色器"""
+        # 使用内置的 'UNIFORM_COLOR' 着色器
+        self.clear_shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+        self.clear_batch = batch_for_shader(
+            self.clear_shader, 'TRI_FAN',
+            {"pos": [(-1, -1), (1, -1), (1, 1), (-1, 1)]}
+        )
+        # print("清除着色器和批处理创建成功")
+
+    def __update_matrices(self, context):
+        """更新视图和投影矩阵"""
+        camera = context.scene.camera
+        if camera:
+            depsgraph = context.evaluated_depsgraph_get()
+            self.view_matrix = camera.matrix_world.inverted()
+            self.projection_matrix = camera.calc_matrix_camera(
+                depsgraph=depsgraph,
+                x=self.render_width,
+                y=self.render_height,
+                scale_x=1.0,
+                scale_y=1.0
+            )
+            # print("矩阵更新成功")
+        else:
+            self.report({'ERROR'}, "场景中未找到相机！")
+            # print("场景中未找到相机！")
+
+    def render_quilt(self, context):
+        """渲染并拼接纹理到 final_offscreen"""
+        self.__update_matrices(context)
+        context.area.tag_redraw()
+
+        # 绑定 final_offscreen 以进行拼接
+        with self.final_offscreen.bind():
+            # 获取当前的投影矩阵
+            viewMatrix = gpu.matrix.get_model_view_matrix()
+            projectionMatrix = gpu.matrix.get_projection_matrix()
+
+            fov = 2 * math.atan(1 / self.projection_matrix[1][1])
+            f = 1 / math.tan(fov / 2)
+            near = (self.projection_matrix[2][3] / (self.projection_matrix[2][2] - 1))
+            # camera_size = f * math.tan(fov / 2)
+
+            with gpu.matrix.push_pop():
+                # 重置矩阵 -> 使用标准设备坐标 [-1, 1]
+                gpu.matrix.load_matrix(Matrix.Identity(4))
+                gpu.matrix.load_projection_matrix(Matrix.Identity(4))
+
+                # 设置混合和深度状态
+                gpu.state.depth_test_set('GREATER_EQUAL')
+                gpu.state.depth_mask_set(True)
+                gpu.state.blend_set('ALPHA')
+
+                # 清除 final_offscreen 的颜色缓冲区
+                self.clear_shader.bind()
+                self.clear_shader.uniform_float("color", (0.0, 0.0, 0.0, 1.0))  # 设置清除颜色为黑色
+                self.clear_batch.draw(self.clear_shader)
+
+                start_time = time.time()
+
+                for idx in range(self.grid_rows * self.grid_cols):
+                    row = idx // self.grid_cols
+                    col = idx % self.grid_cols
+                    row = 4 - row
+                    x_offset = col * self.render_width
+                    y_offset = row * self.render_height
+
+                    # 计算中心位置在 NDC 中的坐标
+                    center_x = (x_offset + self.render_width / 2) / self.final_width * 2 - 1
+                    center_y = (y_offset + self.render_height / 2) / self.final_height * 2 - 1
+                    cameraDistance = context.scene.focal_plane
+                    print(cameraDistance)
+                    cameraSize = cameraDistance * math.tan(fov / 2)
+                    offsetAngle = (0.5 - idx / (40 - 1)) * math.radians(40)
+                    # offset = - f * math.tan(offsetAngle)
+                    offset = cameraDistance * offsetAngle
+                    # 计算新的view matrix
+                    # direction = self.view_matrix.col[2].xyz.normalized()
+                    # new_offset = direction * offset
+                    new_view_matrix = Matrix.Translation((offset, 0, 0)) @ self.view_matrix
+                    # new_view_matrix = self.view_matrix.copy()
+                    # 计算新的projection matrix
+                    new_projection_matrix = self.projection_matrix.copy()
+                    new_projection_matrix[0][2] += offset / (cameraSize * (1440 / 2560))
+
+                    near = context.scene.clip_near
+                    far = context.scene.clip_far
+                    print(near)
+                    print(far)
+                    clip_1 = -(far+near)/(far-near)
+                    clip_2 = -(2*far*near)/(far-near)
+                    new_projection_matrix[2][2] = clip_1
+                    new_projection_matrix[2][3] = clip_2
+
+                    print(f"fov={fov}, f={f}, near={near},clip1={clip_1},clip2={clip_2} offsetAngle={offsetAngle}, offset={offset}")
+                    print(f"第{idx + 1}个纹理，viewMatrix为{new_view_matrix},projectionMatrix为{new_projection_matrix}")
+                    # print(f"渲染第 {idx + 1} 张纹理，位置: ({x_offset}, {y_offset})")
+
+                    # 渲染到单个 offscreen
+                    with self.offscreen.bind():
+                        self.offscreen.draw_view3d(
+                            scene=context.scene,
+                            view_layer=context.view_layer,
+                            view3d=context.space_data,
+                            region=context.region,
+                            view_matrix=new_view_matrix,
+                            projection_matrix=new_projection_matrix
+                        )
+
+                    # 绘制单个纹理到 final_offscreen 的指定位置
+                    self.shader.bind()
+                    self.shader.uniform_sampler("image", self.offscreen.texture_color)
+                    self.shader.uniform_float("scale", (
+                        self.render_width / self.final_width, self.render_height / self.final_height))
+                    self.shader.uniform_float("offset", (center_x, center_y))
+                    self.batch.draw(self.shader)
+                    gpu.shader.unbind()
+
+                # 重置混合模式和深度状态
+                gpu.state.blend_set('NONE')
+                gpu.state.depth_mask_set(False)
+                gpu.state.depth_test_set('NONE')
+
+                # 重新加载原始矩阵
+                gpu.matrix.load_matrix(viewMatrix)
+                gpu.matrix.load_projection_matrix(projectionMatrix)
+
+                end_time = time.time()
+                # print(f"渲染并拼接 {self.grid_rows * self.grid_cols} 张纹理耗时: {end_time - start_time:.6f} 秒")
+
+    def save(self):
+        """在视口中绘制拼接后的纹理"""
+        # 将非连续的 buffer 转换为 numpy.array
+        width, height, channels = 4320, 4800, 4
+        padding = 0  # 每行有 16 字节的填充
+        stride_row = width * channels + padding  # 每行的实际字节数
+
+        # 创建一个模拟的非连续存储的 buffer
+        pixel_data = self.final_offscreen.texture_color.read()
+
+        # 将非连续的 buffer 转换为 numpy.array
+        buffer_array = np.array(pixel_data, dtype=np.uint8)
+
+        # 使用 strides 构建逻辑视图
+        logical_view = np.lib.stride_tricks.as_strided(
+            buffer_array,
+            shape=(height, width, channels),
+            strides=(stride_row, channels, 1)
+        )
+
+        # 查看逻辑视图
+        # print(logical_view.shape)
+        image_data = np.flipud(logical_view)
+        rgb_data = image_data[:, :, :3]
+        image = Image.fromarray(rgb_data, 'RGB')
+        output_path = bpy.context.scene.render.filepath
+        print(output_path)
+        output_path += "render_result"
+        if not output_path.lower().endswith(".png"):
+            output_path += ".png"
+        image.save(output_path)
+
+        # e = time.time()
+        # # print(f"time is {e - s}")
+        self.report({'INFO'}, "Picture saved successfully")
 
     # 点击后调用该方法
     def execute(self, context):
@@ -582,29 +1162,29 @@ class LFDSaveOperator(bpy.types.Operator):
 
 
 class LFDPreviewOperator(bpy.types.Operator):
-    """单击后，开启光场实时预览. 单击Esc退出"""
+    """Start LightField Preview, Esc to exit"""
     bl_idname = "object.preview"
-    bl_label = "Lightfield rendering"
+    bl_label = "Realtime LightField Preview"
     bl_options = {'REGISTER', 'UNDO'}
 
     _handle = None  # 用于存储绘制句柄
 
     display_x: IntProperty(
-        name = "x-axis of display",
-        description = "x axis of display",
-        default = 2560,
+        name="x-axis of display",
+        description="x axis of display",
+        default=2560,
     )
 
     # 执行操作的前提
     @classmethod
-    def poll(cls, context:bpy.types.Context):
+    def poll(cls, context: bpy.types.Context):
         if context.scene.camera is not None and flag is False:
             return True
         return False
 
     # 数据初始化
     def __init__(self):
-        self.offscreen = None      # 用于单相机纹理的存储
+        self.offscreen = None  # 用于单相机纹理的存储
         self.final_offscreen = None  # 用于存储拼接后的大纹理
         self.display_offscreen = None  # 用于显示纹理的离屏缓冲区
         self.shader = None
@@ -840,8 +1420,8 @@ class LFDPreviewOperator(bpy.types.Operator):
 
             fov = 2 * math.atan(1 / self.projection_matrix[1][1])
             f = 1 / math.tan(fov / 2)
-            near = (self.projection_matrix[2][3] / (self.projection_matrix[2][2] - 1))
-            camera_size = f * math.tan(fov / 2)
+            # near = (self.projection_matrix[2][3] / (self.projection_matrix[2][2] - 1))
+            # camera_size = f * math.tan(fov / 2)
 
             with gpu.matrix.push_pop():
                 # 重置矩阵 -> 使用标准设备坐标 [-1, 1]
@@ -870,20 +1450,31 @@ class LFDPreviewOperator(bpy.types.Operator):
                     # 计算中心位置在 NDC 中的坐标
                     center_x = (x_offset + self.render_width / 2) / self.final_width * 2 - 1
                     center_y = (y_offset + self.render_height / 2) / self.final_height * 2 - 1
-
-                    offsetAngle = (0.5 - idx / (40 - 1)) * fov / 2
+                    cameraDistance = context.scene.focal_plane
+                    print(cameraDistance)
+                    cameraSize = cameraDistance * math.tan(fov / 2)
+                    offsetAngle = (0.5 - idx / (40 - 1)) * math.radians(40)
                     # offset = - f * math.tan(offsetAngle)
-                    offset = - f * offsetAngle * 4.0
+                    offset = cameraDistance * math.tan(offsetAngle)
                     # 计算新的view matrix
                     # direction = self.view_matrix.col[2].xyz.normalized()
                     # new_offset = direction * offset
-                    new_view_matrix = Matrix.Translation((-offset*1.5, 0, 0)) @ self.view_matrix
+                    new_view_matrix = Matrix.Translation((offset, 0, 0)) @ self.view_matrix
                     # new_view_matrix = self.view_matrix.copy()
                     # 计算新的projection matrix
                     new_projection_matrix = self.projection_matrix.copy()
-                    new_projection_matrix[0][2] -= offset / (camera_size * (1440 / 2560)) / 2.5
+                    new_projection_matrix[0][2] += offset / (cameraSize * (1440 / 2560))
 
-                    print(f"fov={fov}, f={f}, near={near}, offsetAngle={offsetAngle}, offset={offset}")
+                    near = context.scene.clip_near
+                    far = context.scene.clip_far
+                    print(near)
+                    print(far)
+                    clip_1 = -(far+near)/(far-near)
+                    clip_2 = -(2*far*near)/(far-near)
+                    new_projection_matrix[2][2] = clip_1
+                    new_projection_matrix[2][3] = clip_2
+
+                    print(f"fov={fov}, f={f}, near={near},clip1={clip_1},clip2={clip_2} offsetAngle={offsetAngle}, offset={offset}")
                     print(f"第{idx + 1}个纹理，viewMatrix为{new_view_matrix},projectionMatrix为{new_projection_matrix}")
                     # print(f"渲染第 {idx + 1} 张纹理，位置: ({x_offset}, {y_offset})")
 
@@ -902,7 +1493,7 @@ class LFDPreviewOperator(bpy.types.Operator):
                     self.shader.bind()
                     self.shader.uniform_sampler("image", self.offscreen.texture_color)
                     self.shader.uniform_float("scale", (
-                    self.render_width / self.final_width, self.render_height / self.final_height))
+                        self.render_width / self.final_width, self.render_height / self.final_height))
                     self.shader.uniform_float("offset", (center_x, center_y))
                     self.batch.draw(self.shader)
                     gpu.shader.unbind()
@@ -949,12 +1540,11 @@ class LFDPreviewOperator(bpy.types.Operator):
                 else:
                     print("display_shader 未初始化，无法绑定。")
 
-
             # 假设参数
             np.set_printoptions(threshold=np.inf)
             s = time.time()
             width, height, channels = 1440, 2560, 4
-            padding = 0 # 每行有 16 字节的填充
+            padding = 0  # 每行有 16 字节的填充
             stride_row = width * channels + padding  # 每行的实际字节数
 
             # 创建一个模拟的非连续存储的 buffer
@@ -979,7 +1569,6 @@ class LFDPreviewOperator(bpy.types.Operator):
             rgb_data = image_data[:, :, :3]
             # update_pygame_window(self.screen, rgb_data)
             update_cv_window(window_name, rgb_data)
-
 
             # 图像保存
             # image = Image.fromarray(rgb_data, 'RGB')
@@ -1018,11 +1607,10 @@ class LFDPreviewOperator(bpy.types.Operator):
         )
 
         # 添加定时器
-        self._timer = context.window_manager.event_timer_add((1/self.fps), window=context.window)  # 每 0.1 秒刷新一次
+        self._timer = context.window_manager.event_timer_add((1 / self.fps), window=context.window)  # 每 0.1 秒刷新一次
 
         # 添加 modal 处理器
         context.window_manager.modal_handler_add(self)
-
 
         return {'RUNNING_MODAL'}
 
@@ -1063,9 +1651,80 @@ class LFDPreviewOperator(bpy.types.Operator):
             self.display_offscreen.free()
             self.display_offscreen = None
 
-
     # 在execute之前执行这个方法，用作初始化
     def invoke(self, context, event):
         # return self.execute(context), context.window_manager.invoke_props_dialog(self)
         return context.window_manager.invoke_props_dialog(self)
 
+
+
+class LFDRenderOperator(bpy.types.Operator):
+    """Save LFD Render image"""
+    bl_idname = "object.ldf_render"
+    bl_label = "Save LFD Render Picture"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # 执行操作的前提
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        if context.scene.camera is not None and flag is False:
+            return True
+        return False
+
+class QuiltRenderOperator(bpy.types.Operator):
+    """Save Quilt Render image"""
+    bl_idname = "object.quilt_render"
+    bl_label = "Save Quilt Render Picture"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # 执行操作的前提
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        if context.scene.camera is not None and flag is False:
+            return True
+        return False
+
+    def execute(self, context):
+        camera = bpy.context.scene.camera
+        camera.data.type = 'PERSP'
+        camera.data.dof.use_dof = True
+        camera.data.clip_start = context.scene.clip_near
+        camera.data.clip_end = context.scene.clip_far
+        camera.data.dof.focus_distance = context.scene.focal_plane
+
+        depsgraph = context.evaluated_depsgraph_get()
+        view_matrix = camera.matrix_world.inverted()
+        projection_matrix = camera.calc_matrix_camera(
+            depsgraph=depsgraph,
+            x=540,
+            y=960,
+            scale_x=1.0,
+            scale_y=1.0
+        )
+        fov = 2 * math.atan(1 /projection_matrix[1][1])
+        f = 1 / math.tan(fov / 2)
+        cameraSize = context.scene.focal_plane * math.tan(fov / 2)
+        original_path = bpy.context.scene.render.filepath
+
+        for index in range(40):
+            offsetangle = (0.5 - index/(40-1)) * math.radians(40)
+            offset = context.scene.focal_plane * offsetangle
+
+            new_view_matrix = Matrix.Translation((offset,0,0)) @ view_matrix
+            camera.matrix_world = new_view_matrix.inverted()
+            camera.data.shift_x += 0.5 * offset / cameraSize
+            bpy.context.scene.camera = camera
+
+            bpy.context.scene.render.engine = "BLENDER_EEVEE_NEXT"
+            output_path = f"{original_path}_{index:03d}.png"
+            print(output_path)
+
+            bpy.context.scene.render.filepath = output_path
+            bpy.ops.render.render(write_still=True)
+            bpy.context.scene.render.filepath = original_path
+            if(index == 39):
+                camera.matrix_world = view_matrix.inverted()
+                camera.data.shift_x -= 0.5 * offset / cameraSize
+        self.report({'INFO'}, "Picture saved successfully")
+
+        return {'FINISHED'}
