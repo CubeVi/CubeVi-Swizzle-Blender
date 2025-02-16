@@ -1,21 +1,3 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  Copyright © GJQ, OpenStageAI
-#
-#  This program is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation, either version 3 of the License, or
-#  (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-# ##### END GPL LICENSE BLOCK #####
 import bpy
 import importlib
 import subprocess
@@ -35,7 +17,7 @@ bl_info = {
     "name": "blender_preview",
     "author": "OpenStageAI",
     "blender": (4, 2, 1),
-    "version": (1, 0, 0),
+    "version": (1, 0, 1),
     "description": "Blender Preview for LFD",
     "doc_url": "",
     "tracker_url": "",
@@ -54,15 +36,14 @@ _addon_properties = {}
 #         "property_name": bpy.props.StringProperty(name="property_name"),
 #     },
 # }
-import os
+
 REQUIRED_LIBRARIES = [
     "opencv-python",
-
     "numpy",
     "Pillow",  # Pillow 替代 PIL
-    "pywin32",  # 包含 win32file 和 win32pipe
-    "pycryptodome",  # 用于加密解密
-    "pycryptodomex"
+    "pywin32",
+    "screeninfo"
+    # 包含 win32file 和 win32pipe
 ]
 
 def ensure_packages():
@@ -70,8 +51,8 @@ def ensure_packages():
     检查并安装所需的 Python 包。
     """
     python_executable = sys.executable  # 获取当前 Python 解释器路径
-    # python_executable = os.path.join(os.path.dirname('C:\Program Files\Blender Foundation\Blender 3.6\3.6\python'), 'bin', 'python.exe')
-    print(f"python版本路径:{python_executable}")
+
+
 
     for package in REQUIRED_LIBRARIES:
         package_name, _, required_version = package.partition("==")  # 分离包名和版本号
@@ -103,6 +84,9 @@ def ensure_packages():
                 print(f"Failed to install {package}: {e}")
 
 
+
+
+
 def register():
     ensure_packages()
     print("All required packages are ensured.")
@@ -114,7 +98,7 @@ def register():
     # Internationalization
     load_dictionary(dictionary)
     bpy.app.translations.register(__addon_name__, common_dictionary)
-
+    # set_1()
     print("{} addon is installed.".format(__addon_name__))
 
 
