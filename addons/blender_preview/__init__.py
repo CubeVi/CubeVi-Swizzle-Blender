@@ -15,7 +15,7 @@ from ...common.i18n.i18n import load_dictionary
 # Add-on info
 bl_info = {
     "name": "blender_preview",
-    "author": "OpenStageAI",
+    "author": "CubeVi",
     "blender": (4, 2, 1),
     "version": (1, 0, 1),
     "description": "Blender Preview for LFD",
