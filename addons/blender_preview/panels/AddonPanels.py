@@ -8,6 +8,7 @@ from ..operators.AddonOperators import QuiltSaveOperator
 from ..operators.AddonOperators import FrustumOperator
 from ..operators.AddonOperators import LFDRenderOperator
 from ..operators.AddonOperators import QuiltRenderOperator
+from ..operators.AddonOperators import QuiltSaveOperator1
 from ....common.i18n.i18n import i18n
 from ....common.types.framework import reg_order
 
@@ -23,19 +24,19 @@ class BasePanel(object):
 
 # Define the property in bpy.types.Scene instead of directly in the panel
 def clip_near_property(self: bpy.types.Scene):
-    return self.get("clip_near", 0.1)  # Default value if not set
+    return self.get("clip_near", 2.0)  # Default value if not set
 
 def set_clip_near_property(self: bpy.types.Scene, value: float):
     self["clip_near"] = value
 
 def clip_far_property(self: bpy.types.Scene):
-    return self.get("clip_far", 10)  # Default value if not set
+    return self.get("clip_far", 15)  # Default value if not set
 
 def set_clip_far_property(self: bpy.types.Scene, value: float):
     self["clip_far"] = value
 
 def focal_plane_property(self: bpy.types.Scene):
-    return self.get("focal_plane", 5)  # Default value if not set
+    return self.get("focal_plane", 10)  # Default value if not set
 
 def set_focal_plane_property(self: bpy.types.Scene, value: float):
     self["focal_plane"] = value
@@ -44,7 +45,7 @@ def set_focal_plane_property(self: bpy.types.Scene, value: float):
 bpy.types.Scene.clip_near = bpy.props.FloatProperty(
     name="Near Clip",
     description="Adjust the near Clip",
-    default=0.1,
+    default=2.0,
     min=0.0,
     get=clip_near_property,
     set=set_clip_near_property
@@ -53,7 +54,7 @@ bpy.types.Scene.clip_near = bpy.props.FloatProperty(
 bpy.types.Scene.clip_far = bpy.props.FloatProperty(
     name="Far Clip",
     description="Adjust the far Clip",
-    default=10,
+    default=15,
     min=0.0,
     get=clip_far_property,
     set=set_clip_far_property
@@ -62,11 +63,13 @@ bpy.types.Scene.clip_far = bpy.props.FloatProperty(
 bpy.types.Scene.focal_plane = bpy.props.FloatProperty(
     name="Focal Plane",
     description="Adjust the focal plane",
-    default=5,
+    default=10,
     min=0.0,
     get=focal_plane_property,
     set=set_focal_plane_property
 )
+
+
 
 # @reg_order(0)
 # class ExampleAddonPanel(BasePanel, bpy.types.Panel):
@@ -120,7 +123,8 @@ class ExampleAddonPanel2(BasePanel, bpy.types.Panel):
         row.alignment = 'CENTER'
         row.label(text="Render")
         layout.operator(QuiltRenderOperator.bl_idname)
-        layout.operator(LFDRenderOperator.bl_idname)
+        layout.operator(QuiltSaveOperator1.bl_idname)
+        # layout.operator(LFDRenderOperator.bl_idname)
 
 
 
