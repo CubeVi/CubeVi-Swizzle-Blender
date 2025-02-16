@@ -1,30 +1,35 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  Copyright © GJQ, OpenStageAI
-#
-#  This program is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation, either version 3 of the License, or
-#  (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-# ##### END GPL LICENSE BLOCK #####
 from blender_preview.common.i18n.dictionary import preprocess_dictionary
 
 dictionary = {
     "zh_CN": {
-        ("*", "Real Time Rendering"): "实时渲染",
-        ("*", "Light Field Rendering"): "光场渲染",
-        ("Operator", "connect"): "设备连接",
-        ("Operator", "Lightfield rendering"): "实时渲染预览",
-        ("Operator", "Save LFD Picture"): "保存光场图片"
+        ("*","Light Field Rendering"):"光场渲染",
+        ("*","Camera Settings"):"相机设置",
+        ("*","Near Clip"):"近剪裁面",
+        ("*","Adjust the near Clip"):"调整近剪裁面",
+        ("*","Far Clip"):"远剪裁面",
+        ("*","Adjust the far Clip"):"调整远剪裁面",
+        ("*","Focal Plane"):"焦平面",
+        ("*","Adjust the focal plane"):"调整焦平面",
+        ("Operator","Show Frustum"):"显示视锥",
+        ("*","Show the camera frustum"):"显示/关闭视锥",
+
+        ("*","Platform Connection"):"平台连接",
+        ("Operator","Connect"):"连接",
+        ("*","Connect to the device"):"连接平台及设备",
+
+        ("*","Realtime Preview"):"实时预览",
+        ("Operator","Realtime LightField Preview"):"实时光场预览",
+        ("*","Start LightField Preview, Esc to exit"):"开启光场预览，单击Esc取消",
+        ("Operator","Save Quilt Preview Picture"):"保存宫格预览图片",
+        ("*","Save the preview quilt picture"):"将宫格预览图片保存到指定路径",
+        ("Operator","Save LFD Preview Picture"):"保存光场预览图片",
+        ("*","Save the preview lightfield picture"):"将光场预览图片保存到指定路径",
+
+        ("Operator","Save Multiview Render Picture"):"保存视点渲染图片",
+        ("*","Save Multiview Render image"):"保存视点渲染图片到指定路径",
+        ("Operator","Synthetize Quilt Picture"):"合成宫格图片",
+        ("*","Save Quilt image"):"从视点渲染图片合成宫格图片到指定路径",
+
     }
 }
 
