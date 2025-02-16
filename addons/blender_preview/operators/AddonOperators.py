@@ -19,6 +19,7 @@
 import bpy
 import gpu
 import sys
+from screeninfo import get_monitors
 from gpu_extras.batch import batch_for_shader
 from bpy_extras import view3d_utils
 from mathutils import Matrix, Vector
@@ -126,6 +127,10 @@ def decrypt(encrypted, passphrase):
     data = json.loads(stringData)
     return data
 
+def set_1():
+    bpy.context.scene.render.resolution_x = 540
+    bpy.context.scene.render.resolution_y = 960
+    bpy.context.scene.render.filepath = ""
 
 class FrustumOperator(bpy.types.Operator):
     """Show the camera frustum"""
@@ -230,8 +235,18 @@ class FrustumOperator(bpy.types.Operator):
         ]
         batch_faces = batch_for_shader(frustum_shader, 'TRIS', {"pos": coords_local}, indices=frustum_indices_faces)
 
+        # 设置其他面的颜色为半透明灰色
         frustum_shader.uniform_float("color", (0.5, 0.5, 0.5, 0.1))  # 半透明灰色
         batch_faces.draw(frustum_shader)
+
+        # 设置焦平面的颜色为黄色 (黄色是 (1, 1, 0))
+        focal_plane_indices_faces = [
+            (8, 9, 10), (8, 10, 11)
+        ]
+        focal_plane_faces = batch_for_shader(frustum_shader, 'TRIS', {"pos": coords_local},
+                                             indices=focal_plane_indices_faces)
+        frustum_shader.uniform_float("color", (1, 1, 0, 0.1))  # 设置焦平面的颜色为黄色
+        focal_plane_faces.draw(frustum_shader)
 
         gpu.state.depth_test_set('NONE')
         gpu.state.blend_set('NONE')
@@ -289,6 +304,7 @@ class connectOperator(bpy.types.Operator):
     items = []
 
     def execute(self, context: bpy.types.Context):
+        set_1()
         try:
             config_path = os.path.join(os.getenv('APPDATA'), 'OpenstageAI', 'deviceConfig.json')
             with open(config_path, 'r', encoding='utf-8') as f:
@@ -1169,11 +1185,11 @@ class LFDPreviewOperator(bpy.types.Operator):
 
     _handle = None  # 用于存储绘制句柄
 
-    display_x: IntProperty(
-        name="x-axis of display",
-        description="x axis of display",
-        default=2560,
-    )
+    # display_x: IntProperty(
+    #     name="x-axis of display",
+    #     description="x axis of display",
+    #     default=temp_x,
+    # )
 
     # 执行操作的前提
     @classmethod
@@ -1581,7 +1597,9 @@ class LFDPreviewOperator(bpy.types.Operator):
         global flag
         flag = True
         # self.screen = initialize_pygame_window(self.display_x)
-        initialize_cv_window(self.display_x)
+        global temp_x
+        monitors = get_monitors()
+        initialize_cv_window(monitors[0].width)
         # 判断离屏渲染
         if not self.setup_offscreen_rendering():
             return {'CANCELLED'}
@@ -1651,10 +1669,13 @@ class LFDPreviewOperator(bpy.types.Operator):
             self.display_offscreen.free()
             self.display_offscreen = None
 
-    # 在execute之前执行这个方法，用作初始化
-    def invoke(self, context, event):
-        # return self.execute(context), context.window_manager.invoke_props_dialog(self)
-        return context.window_manager.invoke_props_dialog(self)
+        context.area.tag_redraw()
+
+
+    # # 在execute之前执行这个方法，用作初始化
+    # def invoke(self, context, event):
+    #     # return self.execute(context), context.window_manager.invoke_props_dialog(self)
+    #     return context.window_manager.invoke_props_dialog(self)
 
 
 
@@ -1671,10 +1692,11 @@ class LFDRenderOperator(bpy.types.Operator):
             return True
         return False
 
+
 class QuiltRenderOperator(bpy.types.Operator):
-    """Save Quilt Render image"""
+    """Save Multiview Render image"""
     bl_idname = "object.quilt_render"
-    bl_label = "Save Quilt Render Picture"
+    bl_label = "Save Multiview Render Picture"
     bl_options = {'REGISTER', 'UNDO'}
 
     # 执行操作的前提
@@ -1686,12 +1708,20 @@ class QuiltRenderOperator(bpy.types.Operator):
 
     def execute(self, context):
         camera = bpy.context.scene.camera
+        original_path = bpy.context.scene.render.filepath
+        original_shift_x = camera.data.shift_x
+        original_clip_start = camera.data.clip_start
+        original_clip_end = camera.data.clip_end
+        original_focus_distance = camera.data.dof.focus_distance
+
+        # Set initial camera parameters
         camera.data.type = 'PERSP'
         camera.data.dof.use_dof = True
         camera.data.clip_start = context.scene.clip_near
         camera.data.clip_end = context.scene.clip_far
         camera.data.dof.focus_distance = context.scene.focal_plane
 
+        # Calculate necessary matrices
         depsgraph = context.evaluated_depsgraph_get()
         view_matrix = camera.matrix_world.inverted()
         projection_matrix = camera.calc_matrix_camera(
@@ -1701,18 +1731,17 @@ class QuiltRenderOperator(bpy.types.Operator):
             scale_x=1.0,
             scale_y=1.0
         )
-        fov = 2 * math.atan(1 /projection_matrix[1][1])
+        fov = 2 * math.atan(1 / projection_matrix[1][1])
         f = 1 / math.tan(fov / 2)
         cameraSize = context.scene.focal_plane * math.tan(fov / 2)
-        original_path = bpy.context.scene.render.filepath
 
         for index in range(40):
-            offsetangle = (0.5 - index/(40-1)) * math.radians(40)
+            offsetangle = (0.5 - index / (40 - 1)) * math.radians(40)
             offset = context.scene.focal_plane * offsetangle
 
-            new_view_matrix = Matrix.Translation((offset,0,0)) @ view_matrix
+            new_view_matrix = Matrix.Translation((offset, 0, 0)) @ view_matrix
             camera.matrix_world = new_view_matrix.inverted()
-            camera.data.shift_x += 0.5 * offset / cameraSize
+            camera.data.shift_x = original_shift_x + 0.5 * offset / cameraSize
             bpy.context.scene.camera = camera
 
             bpy.context.scene.render.engine = "BLENDER_EEVEE_NEXT"
@@ -1721,10 +1750,62 @@ class QuiltRenderOperator(bpy.types.Operator):
 
             bpy.context.scene.render.filepath = output_path
             bpy.ops.render.render(write_still=True)
-            bpy.context.scene.render.filepath = original_path
-            if(index == 39):
+
+            if index == 39:
+                # Reset camera position and settings at the last iteration
                 camera.matrix_world = view_matrix.inverted()
-                camera.data.shift_x -= 0.5 * offset / cameraSize
+                camera.data.shift_x = original_shift_x
+
+        # Reset the camera settings back to original
+        camera.data.clip_start = original_clip_start
+        camera.data.clip_end = original_clip_end
+        camera.data.dof.focus_distance = original_focus_distance
+
+        bpy.context.scene.render.filepath = original_path
         self.report({'INFO'}, "Picture saved successfully")
+        return {'FINISHED'}
+
+
+class QuiltSaveOperator1(bpy.types.Operator):
+    """Save Quilt image"""
+    bl_idname = "object.quilt_1_save"
+    bl_label = "Synthetize Quilt Picture"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # 执行操作的前提
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        if context.scene.camera is not None and flag is False:
+            return True
+        return False
+
+    def execute(self, context):
+        original_path = bpy.context.scene.render.filepath
+        original_path = os.path.normpath(original_path)
+        print(original_path)
+        single_width = 540
+        single_height = 960
+        rows = 5
+        cols = 8
+        width = single_width * cols
+        height = single_height * rows
+        new_image = Image.new('RGB', (width, height))
+
+        for i in range(rows):
+            for j in range(cols):
+                image_filename = f"_{i*cols + j:03d}.png"
+                image_path = os.path.join(original_path, image_filename)
+                img = Image.open(image_path)
+                #print(image_path)
+                left = j * single_width
+                upper = i * single_height
+                right = left + single_width
+                lower = upper + single_height
+
+                new_image.paste(img,(left,upper,right,lower))
+
+        output_path = os.path.join(original_path, "quilt_result.png")
+        new_image.save(output_path)
+
 
         return {'FINISHED'}
