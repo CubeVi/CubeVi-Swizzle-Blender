@@ -20,15 +20,15 @@
 from .addons.blender_preview import register as addon_register, unregister as addon_unregister
 
 bl_info = {
-    "name": 'blender_preview',
-    "author": 'OpenStageAI',
-    "blender": (4, 2, 1),
-    "version": (1, 0, 3),
-    "description": 'Blender Preview for LFD',
-    "doc_url": '',
-    "tracker_url": '',
-    "support": 'COMMUNITY',
-    "category": '3D View'
+    "name": "CubeVi_Swizzle_Blender",
+    "author": "CubeVi",
+    "blender": (3, 4, 0),
+    "version": (2, 0, 0),
+    "description": "Blender lightfield SDK by CubeVi",
+    "doc_url": "",
+    "tracker_url": "",
+    "support": "COMMUNITY",
+    "category": "3D View"
 }
 
 def register():

@@ -14,11 +14,11 @@ from ...common.i18n.i18n import load_dictionary
 
 # Add-on info
 bl_info = {
-    "name": "blender_preview",
+    "name": "CubeVi_Swizzle_Blender",
     "author": "CubeVi",
-    "blender": (4, 2, 1),
-    "version": (1, 0, 3),
-    "description": "Blender Preview for LFD",
+    "blender": (3, 4, 0),
+    "version": (2, 0, 0),
+    "description": "Blender lightfield SDK by CubeVi",
     "doc_url": "",
     "tracker_url": "",
     "support": "COMMUNITY",
@@ -37,60 +37,9 @@ _addon_properties = {}
 #     },
 # }
 
-REQUIRED_LIBRARIES = [
-    "opencv-python",
-    "numpy",
-    "Pillow",  # Pillow 替代 PIL
-    "pywin32",
-    # 包含 win32file 和 win32pipe
-    "pycryptodome",  # 用于加密解密
-    "pycryptodomex"
-]
-
-def ensure_packages():
-    """
-    检查并安装所需的 Python 包。
-    """
-    python_executable = sys.executable  # 获取当前 Python 解释器路径
-
-
-
-    for package in REQUIRED_LIBRARIES:
-        package_name, _, required_version = package.partition("==")  # 分离包名和版本号
-        try:
-            # 检查包是否已安装以及版本是否匹配
-            installed_version = metadata.version(package_name)
-            if required_version and installed_version != required_version:
-                print(f"{package_name}版本不匹配：已安装 {installed_version}，需要 {required_version}")
-                raise metadata.PackageNotFoundError
-            print(f"{package_name} 已安装，版本匹配 ({installed_version}).")
-        except metadata.PackageNotFoundError:
-            # 包未安装或版本不匹配时重新安装
-            try:
-                print(f"Installing {package}...")
-                subprocess.check_call(
-                    [python_executable, "-m", "pip", "install", package]
-                )
-                print(f"{package} installed successfully.")
-
-                # 对于 pywin32，需要运行 post-install 脚本
-                if package_name.lower() == "pywin32":
-                    print("Running pywin32 post-install script...")
-                    subprocess.check_call(
-                        [python_executable, "-m", "pywin32_postinstall", "-install"]
-                    )
-                    requires_restart = True
-
-            except Exception as e:
-                print(f"Failed to install {package}: {e}")
-
-
-
 
 
 def register():
-    ensure_packages()
-    print("All required packages are ensured.")
     # Register classes
     auto_load.init()
     auto_load.register()

@@ -16,9 +16,46 @@
 #  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 # ##### END GPL LICENSE BLOCK #####
+import sys
+import os
+import importlib
+import bpy
+import subprocess
+# import screeninfo
+
+path = bpy.utils.script_paths()
+print(path[0])
+
+wheels_folder_path = rf"{path[1]}\addons\CubeVi_Swizzle_Blender\wheels"
+# wheels_folder_path = rf"D:\desktop\wheels"
+
+print(wheels_folder_path)
+# wheels_folder_path = r'D:\desktop\wheels'
+if wheels_folder_path not in sys.path:
+    sys.path.append(wheels_folder_path)
+# 遍历 wheels 文件夹中的所有子文件夹
+for folder_name in os.listdir(wheels_folder_path):
+    folder_path = os.path.join(wheels_folder_path, folder_name)
+
+    # 检查是否是文件夹
+    if os.path.isdir(folder_path):
+        # 假设每个子文件夹中都有一个可以导入的模块
+        try:
+            # 动态导入该子文件夹中的模块
+            module_spec = importlib.util.find_spec(folder_name)
+            if module_spec is None:
+                print(f"Module '{folder_name}' not found.")
+            else:
+                module = importlib.import_module(folder_name)
+                print(f"Module '{folder_name}' successfully loaded.")
+        except Exception as e:
+            print(f"Error loading module '{folder_name}': {e}")
+
+from screeninfo import get_monitors
 import bpy
 import gpu
 import sys
+# from screeninfo import get_monitors
 from gpu_extras.batch import batch_for_shader
 from bpy_extras import view3d_utils
 from mathutils import Matrix, Vector
@@ -30,22 +67,19 @@ from PIL import Image
 import os
 from bpy.props import IntProperty
 
-try:
-    from win32 import win32file, win32pipe
-except ImportError:
-    print("未找到 win32 模块，请重启 Blender 以确保正确加载 pywin32 库。")
 
 import asyncio
 import json
 import cv2
 import base64
 from hashlib import md5
+import websocket
+from bpy.props import StringProperty
 
-try:
-    from Cryptodome import Random
-    from Cryptodome.Cipher import AES
-except ImportError as e:
-    print(f"无法导入Cryptodome模块: {e}")
+
+from Cryptodome import Random
+from Cryptodome.Cipher import AES
+
 
 flag = False
 linenumber = None
@@ -53,8 +87,9 @@ obliquity = None
 deviation = None
 is_drawing = False
 frustum_draw_handler = None
+operator_id = 0
 
-window_name = "Real_time Display"
+window_name = "Real time Display"
 
 
 # def initialize_pygame_window(dis_x):
@@ -81,11 +116,26 @@ window_name = "Real_time Display"
 #     screen.blit(surface, (0, 0))
 #     pygame.display.flip()
 
-def initialize_cv_window(dis_x):
-    # window_name = "Real_time Display"
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-    cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-    cv2.moveWindow(window_name, dis_x, 0)
+def initialize_cv_window():
+    window_name = "Real time Display"
+    monitors = get_monitors()
+
+    # 寻找满足分辨率为 1440x2560 的显示器
+    for monitor in monitors:
+        if monitor.width == 1440 and monitor.height == 2560:
+            # 首先创建一个窗口
+            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+
+            # 调整窗口大小为屏幕的分辨率
+            cv2.resizeWindow(window_name, monitor.width, monitor.height)
+
+            # 先移动到对应显示器的左上角
+            cv2.moveWindow(window_name, monitor.x, monitor.y)
+
+            # 再设置全屏
+            cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
+            break
 
 
 def update_cv_window(window, frame):
@@ -129,7 +179,30 @@ def decrypt(encrypted, passphrase):
 def set_1():
     bpy.context.scene.render.resolution_x = 540
     bpy.context.scene.render.resolution_y = 960
-    bpy.context.scene.render.filepath = ""
+
+def on_open_choice2(ws):
+
+    data_type = "tracking"
+    data_to_send = {
+        "bizId": operator_id,
+        "bizType": "BLENDER_CLICK"
+    }
+
+    final_data = {
+        "type": data_type,
+        "data": data_to_send
+    }
+
+    ws.send(json.dumps(final_data))
+    ws.close()
+
+def c_p():
+    ws_url = "ws://127.0.0.1:9001"
+    ws = websocket.WebSocketApp(ws_url,
+                                on_open=on_open_choice2,
+                                )
+    ws.run_forever()
+
 
 class FrustumOperator(bpy.types.Operator):
     """Show the camera frustum"""
@@ -303,27 +376,27 @@ class connectOperator(bpy.types.Operator):
     items = []
 
     def execute(self, context: bpy.types.Context):
+        print(get_monitors())
+        print(context.scene.my_filepath)
         set_1()
-        try:
-            config_path = os.path.join(os.getenv('APPDATA'), 'OpenstageAI', 'deviceConfig.json')
-            with open(config_path, 'r', encoding='utf-8') as f:
-                device_info = json.load(f)
+        config_path = os.path.join(os.getenv('APPDATA'), 'OpenstageAI', 'deviceConfig.json')
+        global operator_id
+        operator_id = 0
+        c_p()
+        with open(config_path, 'r', encoding='utf-8') as f:
+            device_info = json.load(f)
 
-            if device_info and 'config' in device_info:
-                global obliquity, linenumber, deviation
-                config = device_info['config']
-                password = keycode.encode()
-                data = decrypt(config, password)
+        if device_info and 'config' in device_info:
+            global obliquity, linenumber, deviation
+            config = device_info['config']
+            password = keycode.encode()
+            data = decrypt(config, password)
 
-                configData = data['config']
-                linenumber = configData.get('lineNumber', '')
-                obliquity = configData.get('obliquity', '')
-                deviation = configData.get('deviation', '')
-                self.report({"INFO"}, "Connection Successful")
-                return {'FINISHED'}
-        except Exception as e:
-            self.report({"INFO"}, "Connection Falied")
-            # print("连接失败")
+            configData = data['config']
+            linenumber = configData.get('lineNumber', '')
+            obliquity = configData.get('obliquity', '')
+            deviation = configData.get('deviation', '')
+            self.report({"INFO"}, "Connection Successful")
             return {'FINISHED'}
 
 
@@ -608,7 +681,7 @@ class LFDSaveOperator(bpy.types.Operator):
                     center_x = (x_offset + self.render_width / 2) / self.final_width * 2 - 1
                     center_y = (y_offset + self.render_height / 2) / self.final_height * 2 - 1
                     cameraDistance = context.scene.focal_plane
-                    print(cameraDistance)
+                    # print(cameraDistance)
                     cameraSize = cameraDistance * math.tan(fov / 2)
                     offsetAngle = (0.5 - idx / (40 - 1)) * math.radians(40)
                     # offset = - f * math.tan(offsetAngle)
@@ -624,15 +697,15 @@ class LFDSaveOperator(bpy.types.Operator):
 
                     near = context.scene.clip_near
                     far = context.scene.clip_far
-                    print(near)
-                    print(far)
+                    # print(near)
+                    # print(far)
                     clip_1 = -(far+near)/(far-near)
                     clip_2 = -(2*far*near)/(far-near)
                     new_projection_matrix[2][2] = clip_1
                     new_projection_matrix[2][3] = clip_2
 
-                    print(f"fov={fov}, f={f}, near={near},clip1={clip_1},clip2={clip_2} offsetAngle={offsetAngle}, offset={offset}")
-                    print(f"第{idx + 1}个纹理，viewMatrix为{new_view_matrix},projectionMatrix为{new_projection_matrix}")
+                    # print(f"fov={fov}, f={f}, near={near},clip1={clip_1},clip2={clip_2} offsetAngle={offsetAngle}, offset={offset}")
+                    # print(f"第{idx + 1}个纹理，viewMatrix为{new_view_matrix},projectionMatrix为{new_projection_matrix}")
                     # print(f"渲染第 {idx + 1} 张纹理，位置: ({x_offset}, {y_offset})")
 
                     # 渲染到单个 offscreen
@@ -667,7 +740,7 @@ class LFDSaveOperator(bpy.types.Operator):
                 end_time = time.time()
                 # print(f"渲染并拼接 {self.grid_rows * self.grid_cols} 张纹理耗时: {end_time - start_time:.6f} 秒")
 
-    def save(self):
+    def save(self,context):
         """在视口中绘制拼接后的纹理"""
         if self.display_offscreen:
             # 设置视口绘制区域
@@ -723,19 +796,22 @@ class LFDSaveOperator(bpy.types.Operator):
             rgb_data = image_data[:, :, :3]
             # 图像保存
             image = Image.fromarray(rgb_data, 'RGB')
-            output_path = bpy.context.scene.render.filepath
-            # print(output_path)
-            output_path += "render_result"
+            output_path = context.scene.my_filepath
+            print(output_path)
+            output_path += "LFD_preview_result"
             if not output_path.lower().endswith(".png"):
                 output_path += ".png"
             image.save(output_path)
 
             e = time.time()
             # print(f"time is {e - s}")
-            self.report({'INFO'}, "Picture saved successfully")
+            self.report({'INFO'}, f"Picture saved successfully, path is {output_path}")
 
     # 点击后调用该方法
     def execute(self, context):
+        global operator_id
+        operator_id = 1
+        c_p()
         # 判断离屏渲染
         if not self.setup_offscreen_rendering():
             return {'CANCELLED'}
@@ -754,7 +830,7 @@ class LFDSaveOperator(bpy.types.Operator):
         # 渲染和拼接纹理
         self.render_quilt(context)
 
-        self.save()
+        self.save(context)
 
         return {'FINISHED'}
 
@@ -1052,7 +1128,7 @@ class QuiltSaveOperator(bpy.types.Operator):
                     center_x = (x_offset + self.render_width / 2) / self.final_width * 2 - 1
                     center_y = (y_offset + self.render_height / 2) / self.final_height * 2 - 1
                     cameraDistance = context.scene.focal_plane
-                    print(cameraDistance)
+                    # print(cameraDistance)
                     cameraSize = cameraDistance * math.tan(fov / 2)
                     offsetAngle = (0.5 - idx / (40 - 1)) * math.radians(40)
                     # offset = - f * math.tan(offsetAngle)
@@ -1068,15 +1144,15 @@ class QuiltSaveOperator(bpy.types.Operator):
 
                     near = context.scene.clip_near
                     far = context.scene.clip_far
-                    print(near)
-                    print(far)
+                    # print(near)
+                    # print(far)
                     clip_1 = -(far+near)/(far-near)
                     clip_2 = -(2*far*near)/(far-near)
                     new_projection_matrix[2][2] = clip_1
                     new_projection_matrix[2][3] = clip_2
 
-                    print(f"fov={fov}, f={f}, near={near},clip1={clip_1},clip2={clip_2} offsetAngle={offsetAngle}, offset={offset}")
-                    print(f"第{idx + 1}个纹理，viewMatrix为{new_view_matrix},projectionMatrix为{new_projection_matrix}")
+                    # print(f"fov={fov}, f={f}, near={near},clip1={clip_1},clip2={clip_2} offsetAngle={offsetAngle}, offset={offset}")
+                    # print(f"第{idx + 1}个纹理，viewMatrix为{new_view_matrix},projectionMatrix为{new_projection_matrix}")
                     # print(f"渲染第 {idx + 1} 张纹理，位置: ({x_offset}, {y_offset})")
 
                     # 渲染到单个 offscreen
@@ -1111,7 +1187,7 @@ class QuiltSaveOperator(bpy.types.Operator):
                 end_time = time.time()
                 # print(f"渲染并拼接 {self.grid_rows * self.grid_cols} 张纹理耗时: {end_time - start_time:.6f} 秒")
 
-    def save(self):
+    def save(self,context):
         """在视口中绘制拼接后的纹理"""
         # 将非连续的 buffer 转换为 numpy.array
         width, height, channels = 4320, 4800, 4
@@ -1136,20 +1212,24 @@ class QuiltSaveOperator(bpy.types.Operator):
         image_data = np.flipud(logical_view)
         rgb_data = image_data[:, :, :3]
         image = Image.fromarray(rgb_data, 'RGB')
-        output_path = bpy.context.scene.render.filepath
+        output_path = context.scene.my_filepath
         print(output_path)
-        output_path += "render_result"
+        output_path += "quilt_preview_result"
         if not output_path.lower().endswith(".png"):
             output_path += ".png"
         image.save(output_path)
 
         # e = time.time()
         # # print(f"time is {e - s}")
-        self.report({'INFO'}, "Picture saved successfully")
+        self.report({'INFO'}, f"Picture saved successfully, path is {output_path}")
 
     # 点击后调用该方法
     def execute(self, context):
         # 判断离屏渲染
+        global operator_id
+        operator_id = 1
+        c_p()
+
         if not self.setup_offscreen_rendering():
             return {'CANCELLED'}
 
@@ -1167,7 +1247,7 @@ class QuiltSaveOperator(bpy.types.Operator):
         # 渲染和拼接纹理
         self.render_quilt(context)
 
-        self.save()
+        self.save(context)
 
         return {'FINISHED'}
 
@@ -1184,11 +1264,11 @@ class LFDPreviewOperator(bpy.types.Operator):
 
     _handle = None  # 用于存储绘制句柄
 
-    display_x: IntProperty(
-        name="x-axis of display",
-        description="x axis of display",
-        default=2560,
-    )
+    # display_x: IntProperty(
+    #     name="x-axis of display",
+    #     description="x axis of display",
+    #     default=2560,
+    # )
 
     # 执行操作的前提
     @classmethod
@@ -1466,7 +1546,7 @@ class LFDPreviewOperator(bpy.types.Operator):
                     center_x = (x_offset + self.render_width / 2) / self.final_width * 2 - 1
                     center_y = (y_offset + self.render_height / 2) / self.final_height * 2 - 1
                     cameraDistance = context.scene.focal_plane
-                    print(cameraDistance)
+                    # print(cameraDistance)
                     cameraSize = cameraDistance * math.tan(fov / 2)
                     offsetAngle = (0.5 - idx / (40 - 1)) * math.radians(40)
                     # offset = - f * math.tan(offsetAngle)
@@ -1482,15 +1562,15 @@ class LFDPreviewOperator(bpy.types.Operator):
 
                     near = context.scene.clip_near
                     far = context.scene.clip_far
-                    print(near)
-                    print(far)
+                    # print(near)
+                    # print(far)
                     clip_1 = -(far+near)/(far-near)
                     clip_2 = -(2*far*near)/(far-near)
                     new_projection_matrix[2][2] = clip_1
                     new_projection_matrix[2][3] = clip_2
 
-                    print(f"fov={fov}, f={f}, near={near},clip1={clip_1},clip2={clip_2} offsetAngle={offsetAngle}, offset={offset}")
-                    print(f"第{idx + 1}个纹理，viewMatrix为{new_view_matrix},projectionMatrix为{new_projection_matrix}")
+                    # print(f"fov={fov}, f={f}, near={near},clip1={clip_1},clip2={clip_2} offsetAngle={offsetAngle}, offset={offset}")
+                    # print(f"第{idx + 1}个纹理，viewMatrix为{new_view_matrix},projectionMatrix为{new_projection_matrix}")
                     # print(f"渲染第 {idx + 1} 张纹理，位置: ({x_offset}, {y_offset})")
 
                     # 渲染到单个 offscreen
@@ -1598,8 +1678,11 @@ class LFDPreviewOperator(bpy.types.Operator):
         # self.screen = initialize_pygame_window(self.display_x)
         global temp_x
         # monitors = get_monitors()
-        x = self.display_x
-        initialize_cv_window(x)
+        x = context.scene.x_axis
+        initialize_cv_window()
+        global operator_id
+        operator_id = 1
+        c_p()
         # 判断离屏渲染
         if not self.setup_offscreen_rendering():
             return {'CANCELLED'}
@@ -1672,10 +1755,12 @@ class LFDPreviewOperator(bpy.types.Operator):
         context.area.tag_redraw()
 
 
-    # # 在execute之前执行这个方法，用作初始化
-    def invoke(self, context, event):
-        # return self.execute(context), context.window_manager.invoke_props_dialog(self)
-        return context.window_manager.invoke_props_dialog(self)
+    # 在execute之前执行这个方法，用作初始化
+    # def invoke(self, context, event):
+    #     # return self.execute(context), context.window_manager.invoke_props_dialog(self)
+    #     return context.window_manager.invoke_props_dialog(self)
+
+
 
 class LFDRenderOperator(bpy.types.Operator):
     """Save LFD Render image"""
@@ -1697,7 +1782,19 @@ class QuiltRenderOperator(bpy.types.Operator):
     bl_label = "Save Multiview Render Picture"
     bl_options = {'REGISTER', 'UNDO'}
 
-    # 执行操作的前提
+    # 用于跟踪渲染进度和参数的属性
+    index: bpy.props.IntProperty(default=0)
+    camera = None
+    original_path = ""
+    original_shift_x = 0.0
+    original_clip_start = 0.0
+    original_clip_end = 0.0
+    original_focus_distance = 0.0
+    view_matrix = None
+    cameraSize = 0.0
+    focal_plane = 0.0
+    _timer = None
+
     @classmethod
     def poll(cls, context: bpy.types.Context):
         if context.scene.camera is not None and flag is False:
@@ -1705,24 +1802,28 @@ class QuiltRenderOperator(bpy.types.Operator):
         return False
 
     def execute(self, context):
-        camera = bpy.context.scene.camera
-        original_path = bpy.context.scene.render.filepath
-        original_shift_x = camera.data.shift_x
-        original_clip_start = camera.data.clip_start
-        original_clip_end = camera.data.clip_end
-        original_focus_distance = camera.data.dof.focus_distance
+        global operator_id
+        operator_id = 2
+        c_p()
+        # 保存原始参数
+        self.camera = context.scene.camera
+        self.original_path = context.scene.my_filepath
+        self.original_shift_x = self.camera.data.shift_x
+        self.original_clip_start = self.camera.data.clip_start
+        self.original_clip_end = self.camera.data.clip_end
+        self.original_focus_distance = self.camera.data.dof.focus_distance
 
-        # Set initial camera parameters
-        camera.data.type = 'PERSP'
-        camera.data.dof.use_dof = True
-        camera.data.clip_start = context.scene.clip_near
-        camera.data.clip_end = context.scene.clip_far
-        camera.data.dof.focus_distance = context.scene.focal_plane
+        # 设置初始相机参数
+        self.camera.data.type = 'PERSP'
+        self.camera.data.dof.use_dof = True
+        self.camera.data.clip_start = context.scene.clip_near
+        self.camera.data.clip_end = context.scene.clip_far
+        self.camera.data.dof.focus_distance = context.scene.focal_plane
 
-        # Calculate necessary matrices
+        # 计算必要矩阵
         depsgraph = context.evaluated_depsgraph_get()
-        view_matrix = camera.matrix_world.inverted()
-        projection_matrix = camera.calc_matrix_camera(
+        self.view_matrix = self.camera.matrix_world.inverted()
+        projection_matrix = self.camera.calc_matrix_camera(
             depsgraph=depsgraph,
             x=540,
             y=960,
@@ -1730,44 +1831,71 @@ class QuiltRenderOperator(bpy.types.Operator):
             scale_y=1.0
         )
         fov = 2 * math.atan(1 / projection_matrix[1][1])
-        f = 1 / math.tan(fov / 2)
-        cameraSize = context.scene.focal_plane * math.tan(fov / 2)
+        self.cameraSize = context.scene.focal_plane * math.tan(fov / 2)
+        self.focal_plane = context.scene.focal_plane
 
-        for index in range(40):
-            offsetangle = (0.5 - index / (40 - 1)) * math.radians(40)
-            offset = context.scene.focal_plane * offsetangle
+        # 初始化进度条和模态循环
+        self.index = 0
+        context.window_manager.progress_begin(0, 40)
+        self._timer = context.window_manager.event_timer_add(0.0001, window=context.window)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
-            new_view_matrix = Matrix.Translation((offset, 0, 0)) @ view_matrix
-            camera.matrix_world = new_view_matrix.inverted()
-            camera.data.shift_x = original_shift_x + 0.5 * offset / cameraSize
-            bpy.context.scene.camera = camera
+    def cleanup(self, context):
+        """恢复原始设置并结束渲染"""
+        self.camera.data.clip_start = self.original_clip_start
+        self.camera.data.clip_end = self.original_clip_end
+        self.camera.data.dof.focus_distance = self.original_focus_distance
+        self.camera.data.shift_x = self.original_shift_x
+        self.camera.matrix_world = self.view_matrix.inverted()
 
-            # bpy.context.scene.render.engine = "BLENDER_EEVEE_NEXT"
-            output_path = f"{original_path}_{index:03d}.png"
-            print(output_path)
+        context.scene.render.filepath = self.original_path
+        context.window_manager.progress_end()
 
-            bpy.context.scene.render.filepath = output_path
-            bpy.ops.render.render(write_still=True)
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            # 清理原始设置并结束渲染
+            self.cleanup(context)
+            self.report({"INFO"}, "Render Cancelled")
+            return {'CANCELLED'}
 
-            if index == 39:
-                # Reset camera position and settings at the last iteration
-                camera.matrix_world = view_matrix.inverted()
-                camera.data.shift_x = original_shift_x
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
 
-        # Reset the camera settings back to original
-        camera.data.clip_start = original_clip_start
-        camera.data.clip_end = original_clip_end
-        camera.data.dof.focus_distance = original_focus_distance
 
-        bpy.context.scene.render.filepath = original_path
-        self.report({'INFO'}, "Picture saved successfully")
-        return {'FINISHED'}
+        if self.index >= 40:
+            # 渲染完成，清理资源
+            self.cleanup(context)
+            self.report({'INFO'}, "All pictures saved successfully.")
+            return {'FINISHED'}
+
+        # 计算当前视角参数
+        offsetangle = (0.5 - self.index / (40 - 1)) * math.radians(40)
+        offset = self.focal_plane * offsetangle
+        new_view_matrix = Matrix.Translation((offset, 0, 0)) @ self.view_matrix
+
+        # 更新相机位置和参数
+        self.camera.matrix_world = new_view_matrix.inverted()
+        self.camera.data.shift_x = self.original_shift_x + 0.5 * offset / self.cameraSize
+
+        # 设置渲染路径并执行渲染
+        output_path = f"{self.original_path}_{self.index:03d}.png"
+        context.scene.render.filepath = output_path
+        bpy.ops.render.render(write_still=True)
+
+        # 更新进度并准备下一帧
+        context.window_manager.progress_update(self.index)
+        self.index += 1
+
+        # 允许界面刷新
+        context.area.tag_redraw()
+        return {'RUNNING_MODAL'}
 
 
 class QuiltSaveOperator1(bpy.types.Operator):
     """Save Quilt image"""
     bl_idname = "object.quilt_1_save"
-    bl_label = "Synthetize Quilt Picture"
+    bl_label = "Synthesize Quilt Picture"
     bl_options = {'REGISTER', 'UNDO'}
 
     # 执行操作的前提
@@ -1778,7 +1906,10 @@ class QuiltSaveOperator1(bpy.types.Operator):
         return False
 
     def execute(self, context):
-        original_path = bpy.context.scene.render.filepath
+        global operator_id
+        operator_id = 2
+        c_p()
+        original_path = context.scene.my_filepath
         original_path = os.path.normpath(original_path)
         print(original_path)
         single_width = 540
@@ -1802,8 +1933,574 @@ class QuiltSaveOperator1(bpy.types.Operator):
 
                 new_image.paste(img,(left,upper,right,lower))
 
-        output_path = os.path.join(original_path, "quilt_result.png")
+        output_path = os.path.join(original_path, "quilt_synthesize_result.png")
         new_image.save(output_path)
-
+        self.report({'INFO'}, f"Quilt synthesize successfully, path is {output_path}")
 
         return {'FINISHED'}
+
+
+message_ = "上传失败"
+
+# 将文件内容转换为 Base64 编码
+def file_to_base64(file_path):
+    with open(file_path, "rb") as file:
+        file_content = file.read()
+        return base64.b64encode(file_content).decode('utf-8')
+
+# 将大的数据分割成大小为 max_size 的小片
+def split_data(data, max_size):
+    return [data[i:i + max_size] for i in range(0, len(data), max_size)]
+
+# WebSocket 回调函数
+def on_open_choice1(ws):
+    print("已连接到服务器")
+    # 触发数据发送
+    send_next_chunk(ws)
+
+from websocket import WebSocketTimeoutException
+
+def send_next_chunk(ws):
+    global current_chunk_index  # 记录当前发送的分片索引
+
+    if current_chunk_index < len(data_chunks):
+        print(f"当前在第{current_chunk_index+1}分片,总共{len(data_chunks)}分片")
+        chunk = data_chunks[current_chunk_index]
+        # print("zheshi chunk")
+        # print(chunk)
+
+        data_split = {
+            "type": "quilt",
+            "data": chunk,
+            "done": False  # 最后一片设置 done 为 True
+        }
+        # 打印前100个和后100个
+        print(str(data_split)[:100])
+        print(str(data_split)[-100:])
+
+        # 发送分片数据
+        ws.send(json.dumps(data_split))
+        print(f"发送了第 {current_chunk_index + 1} 片数据")
+        current_chunk_index += 1
+
+        # 继续发送下一个分片，延迟少许时间
+        time.sleep(0.1)  # 可根据需要调整延迟时间，避免过快发送影响网络
+
+        # 继续发送下一片数据
+        send_next_chunk(ws)
+    else:
+        # 所有数据片发送完毕后，发送结束标识
+        done_message = {
+            "type": "quilt",
+            "data": None,
+            "done": True
+        }
+        print("发送结束标识")
+        print(str(done_message)[:100])
+        ws.send(json.dumps(done_message))
+        print("数据传输结束")
+        ws.close()  # 发送结束后关闭 WebSocket 连接
+
+
+# def on_close(ws, close_status_code, close_msg):
+#     # global message_
+#     # message_ = "连接已关闭"
+#     print("连接已关闭")
+#
+#
+# def on_error(ws, error):
+#     global message_
+#     message_ = f"发生错误: {error}"
+#     print(f"发生错误: {error}")
+
+
+# 主函数
+def upload_file(self, file_path1 , file_path2, title):
+    global message_
+    message_ = "上传失败"
+    print(file_path1)
+    if not os.path.isfile(file_path1):
+        print("封面图片不存在")
+        self.report({'INFO'}, "封面图片不存在，确保文件路径下存在_020.png")
+        return
+    if not os.path.isfile(file_path2):
+        print("合成图片不存在")
+        self.report({'INFO'}, "source图片不存在,确保文件路径下存在quilt_synthesize_result.png")
+        return
+
+    # 获取文件的 MIME 类型（这里只支持 PNG 类型）
+    mime_type = "image/png"
+
+    # 将文件内容转为 Base64 编码
+    base64_string_1 = file_to_base64(file_path1)
+    base64_string_2 = file_to_base64(file_path2)
+
+    # 创建要发送的数据对象
+    data_to_send = {
+        "previewFile": f"data:{mime_type};base64,{base64_string_1}",
+        "previewFileName": os.path.basename(file_path1),
+        "previewFileType": mime_type.split("/")[1],
+        "resourceFile": f"data:{mime_type};base64,{base64_string_2}",
+        "resourceFileName": os.path.basename(file_path2),
+        "resourceFileType": mime_type.split("/")[1],
+        "title": title
+    }
+
+    # 序列化整个 data_to_send 对象为 JSON 字符串
+    json_data = json.dumps(data_to_send)
+
+    # 获取 Base64 字符串并分片
+    global data_chunks
+    data_chunks = split_data(json_data, 1024 * 1024)  # 分片大小为 1MB
+
+    # 设置分片的索引
+    global current_chunk_index
+    current_chunk_index = 0
+
+    # 连接到 WebSocket 服务器
+    ws_url = "ws://127.0.0.1:9001"  # 服务器地址
+    ws = websocket.WebSocketApp(ws_url,
+                                on_open=on_open_choice1,
+                                on_message=None,
+                                on_close=None,
+                                on_error=None)
+
+    # 启动 WebSocket 客户端
+    ws.run_forever()
+
+
+class ConnectPlatform(bpy.types.Operator):
+    """Upload to the platform"""
+    bl_idname = "object.platform"
+    bl_label = "Upload to the platform"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    title: StringProperty(
+        name="title of the picture",
+        description="set the title of the picture",
+        default="default",
+    )
+    # 执行操作的前提
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        if context.scene.camera is not None and flag is False:
+            return True
+        return False
+
+
+    def execute(self, context):
+        global operator_id
+        operator_id = 3
+        c_p()
+        print(self.title)
+        # file_path = "D:/desktop/temp/quilt_result.png"  # 替换为你的 PNG 文件路径
+        fp = bpy.context.scene.my_filepath
+        fp1 = os.path.join(fp,"_020.png")
+        fp2 = os.path.join(fp,"quilt_synthesize_result.png")
+        print(fp)
+        print(fp1)
+        print(fp2)
+        upload_file(self, fp1, fp2 , self.title)
+        return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+
+class RenderAnimation(bpy.types.Operator):
+    """Render animation"""
+    bl_idname = "object.animation"
+    bl_label = "Render Animation"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        if context.scene.camera is not None and flag is False:
+            return True
+        return False
+
+    def execute(self, context):
+        global operator_id
+        operator_id = 4
+        c_p()
+        # 获取文件路径
+        output_path = context.scene.my_filepath
+
+        # 设置输出路径，确保目录存在
+        if output_path:
+            context.scene.render.filepath = output_path
+
+            # 设置渲染为静态图像，渲染整个动画
+            bpy.ops.render.render(animation=True, write_still=True)
+
+            print("Rendering animation to:", output_path)
+            return {'FINISHED'}
+        else:
+            self.report({'WARNING'}, "Output path not set in scene.")
+            return {'CANCELLED'}
+
+
+
+class RenderImageSequenceToVideo(bpy.types.Operator):
+    """Render Image Sequence to Video"""
+    bl_idname = "object.render_image_sequence_to_video"
+    bl_label = "Render Image Sequence to Video"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        if context.scene.camera is not None and flag is False:
+            return True
+        return False
+
+    def execute(self, context):
+        global operator_id
+        operator_id = 4
+        c_p()
+        input_folder = context.scene.my_filepath
+        output_video_path = os.path.join(input_folder, "output.mp4")
+
+        # 原有图像序列处理部分...
+        image_files = [f"quilt_frame_{i}.png" for i in range(context.scene.frame_s, context.scene.frame_e + 1)]
+
+        # 图像验证部分...
+        images = []
+        for image_file in image_files:
+            image_path = os.path.join(input_folder, image_file)
+            if os.path.exists(image_path):
+                images.append(image_path)
+            else:
+                self.report({'WARNING'}, f"文件 {image_file} 不存在，跳过。")
+
+        if not images:
+            self.report({'ERROR'}, "没有找到有效的图像文件！")
+            return {'CANCELLED'}
+
+        # FFmpeg路径
+        # ffmpeg_path = rf"D:\desktop\wheels\ffmpeg\bin\ffmpeg.exe"
+        ffmpeg_path = rf"{path[1]}\addons\CubeVi_Swizzle_Blender\wheels\ffmpeg\bin\ffmpeg.exe"
+
+        # 视频渲染命令
+        image_sequence_path = os.path.join(input_folder, f"quilt_frame_%d.png")
+        render_command = [
+            ffmpeg_path,
+            '-f', 'image2',
+            '-framerate', str(context.scene.fps),
+            '-i', image_sequence_path,
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '23',
+            '-threads', '2',
+            '-vsync', '0',
+            '-pix_fmt', 'yuv420p',
+            '-y',
+            output_video_path
+        ]
+
+        # 执行视频渲染
+        try:
+            subprocess.run(render_command, check=True)
+        except subprocess.CalledProcessError as e:
+            self.report({'ERROR'}, f"视频渲染失败: {str(e)}")
+            return {'CANCELLED'}
+
+        # 生成封面图
+        cover_path = os.path.join(input_folder, "cover.png")
+        cover_command = [
+            ffmpeg_path,
+            '-i', output_video_path,
+            '-vf', 'crop=540:960:0:0',  # 裁剪左上角540x960区域
+            '-vframes', '1',           # 只处理第一帧
+            '-y',                      # 覆盖已有文件
+            cover_path
+        ]
+
+        try:
+            subprocess.run(cover_command, check=True)
+            if os.path.exists(cover_path):
+                self.report({'INFO'}, f"封面图已保存到: {cover_path}")
+            else:
+                self.report({'WARNING'}, "封面图生成失败")
+        except subprocess.CalledProcessError as e:
+            self.report({'ERROR'}, f"封面图生成失败: {str(e)}")
+            return {'CANCELLED'}
+
+        self.report({'INFO'}, f"视频已保存到: {output_video_path}")
+        return {'FINISHED'}
+
+
+
+class RenderAnimation1(bpy.types.Operator):
+    """Render Animation"""
+    bl_idname = "object.ani_render"
+    bl_label = "Render Animation"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # 用于跟踪渲染进度和参数的属性
+    index: bpy.props.IntProperty(default=0)
+    camera = None
+    original_path = ""
+    original_shift_x = 0.0
+    original_clip_start = 0.0
+    original_clip_end = 0.0
+    original_focus_distance = 0.0
+    view_matrix = None
+    cameraSize = 0.0
+    focal_plane = 0.0
+    _timer = None
+    index_ = 0
+    cancel_render = False  # 标记是否取消渲染
+
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        if context.scene.camera is not None and flag is False:
+            return True
+        return False
+
+    def execute(self, context):
+        global operator_id
+        operator_id = 4
+        c_p()
+        scene = bpy.context.scene
+        frame_start = scene.frame_s
+        frame_end = scene.frame_e
+
+        if frame_start <= frame_end:
+
+            bpy.context.scene.frame_current = frame_start
+            # 保存原始参数
+            self.camera = context.scene.camera
+            self.original_path = context.scene.my_filepath
+            self.original_shift_x = self.camera.data.shift_x
+            self.original_clip_start = self.camera.data.clip_start
+            self.original_clip_end = self.camera.data.clip_end
+            self.original_focus_distance = self.camera.data.dof.focus_distance
+
+            # 设置初始相机参数
+            self.camera.data.type = 'PERSP'
+            self.camera.data.dof.use_dof = True
+            self.camera.data.clip_start = context.scene.clip_near
+            self.camera.data.clip_end = context.scene.clip_far
+            self.camera.data.dof.focus_distance = context.scene.focal_plane
+
+            # 计算必要矩阵
+            depsgraph = context.evaluated_depsgraph_get()
+            self.view_matrix = self.camera.matrix_world.inverted()
+            projection_matrix = self.camera.calc_matrix_camera(
+                depsgraph=depsgraph,
+                x=540,
+                y=960,
+                scale_x=1.0,
+                scale_y=1.0
+            )
+            fov = 2 * math.atan(1 / projection_matrix[1][1])
+            self.cameraSize = context.scene.focal_plane * math.tan(fov / 2)
+            self.focal_plane = context.scene.focal_plane
+
+            # 初始化进度条和模态循环
+            self.index = 0
+            context.window_manager.progress_begin(0, 40)  # 渲染每帧 40 张图
+            self._timer = context.window_manager.event_timer_add(0.0001, window=context.window)
+            context.window_manager.modal_handler_add(self)
+
+            frame_start += 1
+            self.index_ += 1
+
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            # 监听 ESC 键按下，取消渲染
+            self.cancel_render = True
+
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        scene = bpy.context.scene
+
+        if self.cancel_render:  # 检查是否需要取消渲染
+            self.cleanup(context)
+            self.report({"INFO"}, "Render was cancelled.")
+            return {'CANCELLED'}
+
+        if scene.frame_current > scene.frame_e:  # 如果当前帧大于结束帧，则结束渲染
+            self.cleanup(context)
+            self.report({'INFO'}, "All frames rendered successfully.")
+            return {'FINISHED'}
+
+        if self.index >= 40:  # 每帧渲染 40 张图像后，合成并保存
+            # 合成所有的 40 张图片成一张大图
+            original_path = context.scene.my_filepath
+            original_path = os.path.normpath(original_path)
+            print(original_path)
+            single_width = 540
+            single_height = 960
+            rows = 5  # 5 行
+            cols = 8  # 8 列
+            width = single_width * cols
+            height = single_height * rows
+            new_image = Image.new('RGB', (width, height))
+
+            # 遍历所有图片并合成
+            for i in range(rows):
+                for j in range(cols):
+                    image_filename = f"_{i * cols + j:03d}.png"
+                    image_path = os.path.join(original_path, image_filename)
+                    img = Image.open(image_path)
+                    left = j * single_width
+                    upper = i * single_height
+                    right = left + single_width
+                    lower = upper + single_height
+
+                    new_image.paste(img, (left, upper, right, lower))
+
+            # 保存合成后的图像
+            output_path = os.path.join(original_path, f"quilt_frame_{scene.frame_current}.png")
+            new_image.save(output_path)
+            self.index_ += 1
+            self.report({'INFO'}, f"Quilt synthesize successfully, path is {output_path}")
+
+            # 删除已渲染的 40 张单张图片
+            for i in range(40):
+                file_name = f"{original_path}\_{i:03d}.png"
+                if os.path.exists(file_name):
+                    os.remove(file_name)
+                    print(f"Deleted: {file_name}")
+                else:
+                    print(f"File not found: {file_name}")
+
+            # 跳转到下一帧
+            scene.frame_current += 1  # 跳到下一帧
+            self.index = 0  # 重置索引以开始渲染新的 40 张图像
+
+            context.window_manager.progress_update(self.index)
+            return {'RUNNING_MODAL'}
+
+        # 计算当前视角参数
+        offsetangle = (0.5 - self.index / (40 - 1)) * math.radians(40)
+        offset = self.focal_plane * offsetangle
+        new_view_matrix = Matrix.Translation((offset, 0, 0)) @ self.view_matrix
+
+        # 更新相机位置和参数
+        self.camera.matrix_world = new_view_matrix.inverted()
+        self.camera.data.shift_x = self.original_shift_x + 0.5 * offset / self.cameraSize
+
+        # 设置渲染路径并执行渲染
+        output_path = f"{self.original_path}_{self.index:03d}.png"
+        context.scene.render.filepath = output_path
+        bpy.ops.render.render(write_still=True)
+
+        # 更新进度并准备下一帧
+        context.window_manager.progress_update(self.index)
+        self.index += 1
+
+        # 允许界面刷新
+        context.area.tag_redraw()
+        return {'RUNNING_MODAL'}
+
+    def cleanup(self, context):
+        """恢复原始设置并结束渲染"""
+        self.camera.data.clip_start = self.original_clip_start
+        self.camera.data.clip_end = self.original_clip_end
+        self.camera.data.dof.focus_distance = self.original_focus_distance
+        self.camera.data.shift_x = self.original_shift_x
+        self.camera.matrix_world = self.view_matrix.inverted()
+
+        context.scene.render.filepath = self.original_path
+        context.window_manager.progress_end()
+
+
+
+
+# 主函数
+def upload_file_video(self, file_path1 , file_path2, title):
+    global message_
+    message_ = "上传失败"
+    print(file_path1)
+    if not os.path.isfile(file_path1):
+        print("封面图片不存在")
+        self.report({'INFO'}, "封面图片不存在，确保文件路径下存在cover.png")
+        return
+    if not os.path.isfile(file_path2):
+        print("视频不存在")
+        self.report({'INFO'}, "视频不存在,确保文件路径下存在output.mp4")
+        return
+
+    # 获取文件的 MIME 类型（这里只支持 PNG 类型）
+    mime_type = "video/mp4"
+
+    # 将文件内容转为 Base64 编码
+    base64_string_1 = file_to_base64(file_path1)
+    base64_string_2 = file_to_base64(file_path2)
+
+    # 创建要发送的数据对象
+    data_to_send = {
+        "previewFile": f"data:{mime_type};base64,{base64_string_1}",
+        "previewFileName": os.path.basename(file_path1),
+        "previewFileType": mime_type.split("/")[1],
+        "resourceFile": f"data:{mime_type};base64,{base64_string_2}",
+        "resourceFileName": os.path.basename(file_path2),
+        "resourceFileType": mime_type.split("/")[1],
+        "title": title
+    }
+
+    # 序列化整个 data_to_send 对象为 JSON 字符串
+    json_data = json.dumps(data_to_send)
+
+    # 获取 Base64 字符串并分片
+    global data_chunks
+    data_chunks = split_data(json_data, 1024 * 1024)  # 分片大小为 1MB
+
+    # 设置分片的索引
+    global current_chunk_index
+    current_chunk_index = 0
+
+    # 连接到 WebSocket 服务器
+    ws_url = "ws://127.0.0.1:9001"  # 服务器地址
+    ws = websocket.WebSocketApp(ws_url,
+                                on_open=on_open_choice1,
+                                on_message=None,
+                                on_close=None,
+                                on_error=None)
+
+    # 启动 WebSocket 客户端
+    ws.run_forever()
+
+
+class ConnectVideoPlatform(bpy.types.Operator):
+    """Upload video to the platform"""
+    bl_idname = "object.vplatfrom"
+    bl_label = "Upload video to the platform"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    title: StringProperty(
+        name="title of the video",
+        description="set the title of the video",
+        default="default",
+    )
+
+    # 执行操作的前提
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        if context.scene.camera is not None and flag is False:
+            return True
+        return False
+
+
+    def execute(self, context):
+        global operator_id
+        operator_id = 5
+        c_p()
+        print(self.title)
+        # file_path = "D:/desktop/temp/quilt_result.png"  # 替换为你的 PNG 文件路径
+        fp = bpy.context.scene.my_filepath
+        fp1 = os.path.join(fp,"cover.png")
+        fp2 = os.path.join(fp,"output.mp4")
+        print(fp)
+        print(fp1)
+        print(fp2)
+        upload_file_video(self, fp1, fp2 , self.title)
+        return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
