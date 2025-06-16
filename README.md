@@ -1,35 +1,33 @@
 <h4 align="center">
-  <img src="doc/src/512x512.png" alt="openstageAI logo" style="width:15%; ">
+  <img src="doc/doc/src/512x512.png" alt="openstageAI logo" style="width:15%; ">
   
 <h1 align="center">CubeVi-Swizzle-Blender</h1>
 
 </h3>
 
+**Read this in other languages: [English](README.md), [中文](README_zh.md).**
 
 
-
-[![OpenStageAI](https://img.shields.io/badge/OpenStageAI-web-blue)](https://www.openstageai.com/)
+[![OpenStageAI](https://img.shields.io/badge/OpenStageAI-web-blue)](https://cubevi.com/)
 [![Blender](https://img.shields.io/badge/Blender-download-red)](https://www.blender.org/download/)
-[![Chat](https://img.shields.io/badge/chat-discord-blue)](https://discord.gg/kAucVzbvQM)
-[![Chat](https://img.shields.io/badge/chat-Wechat-yellow)](TODO)
+[![Chat](https://img.shields.io/badge/chat-discord-blue)](https://cubevi.com/pages/contact)
  <!-- this badge is too long, please place it in the last one to make it pretty --> 
 
 <p align="center">
-    👋 加入我们的 <a href="TODO" target="_blank">WeChat</a> 和 <a href="https://discord.gg/kAucVzbvQM" target="_blank">Discord</a> 
+    👋 Join ours <a href="https://cubevi.com/pages/contact" target="_blank">Discord</a> 
 </p>
 
-## 项目介绍
-本插件由**CubeVi**开发，旨在在[**光场显示屏产品**](https://www.openstageai.com/companion1)上实时展示Blender预览结果，进行预览和渲染图像/动画的保存和上传。
+## Project Introduction
+This SDK is developed by **CubeVi**, aims at showing the preview result of Blender on our [**Light Field Display C1**](https://cubevi.com/products/cube-c1), to preview, render, save and upload the images and videos.
 
 
+## Requirements
 
-## 版本要求
+This project is designed for [**Light Field Display C1**](https://cubevi.com/products/cube-c1), please make sure your computer is connected to the light field display correctly [**Light Field Display C1**](https://cubevi.com/products/cube-c1), user manual and openstageai app downloading [click here](https://cubevi.com/pages/download-page)
 
-本项目是用于[**光场显示屏产品C1**](https://www.openstageai.com/companion1)的Blender插件，请确保你的电脑已经正确连接[**光场显示屏C1**](https://www.openstageai.com/companion1)，教程和OpenstageAI客户端下载请[点击这里](https://www.openstageai.com/download)
+**Supporting Blender version**
 
-**目前支持的Blender版本如下**
-
-| Blender版本 | 下载 |
+| Blender version | Download |
 | :--- | :---: | 
 | Blender3.4 | [3.4](https://download.blender.org/release/Blender3.4/) | 
 | Blender3.5 | [3.5](https://download.blender.org/release/Blender3.5/) | 
@@ -37,69 +35,67 @@
 | Blender4.0 | [4.0](https://download.blender.org/release/Blender4.0/) | 
 | Blender4.1 | [4.1](https://download.blender.org/release/Blender4.1/) | 
 | Blender4.2 | [4.2](https://download.blender.org/release/Blender4.2/) | 
-注：Blender4.3自身API调用存在bug，导致预览结果中纹理部分会出现偏移，仅可正常输出渲染图像。
-| Blender4.3 | [4.3](https://download.blender.org/release/Blender4.3/) | 
 
+**This SDK only support Windows**
 
-**此插件目前只支持Windows系统**
+## Installation guide
 
-## 插件安装教程
+Installation and detailed guidance [Usage](doc/doc/usage.md)
 
-安装及详细教程请参见[教程](doc/usage.md)
+## Usage
 
-## 插件使用
+### Device connection
 
-### 设备连接
-
-1. 请确保您的电脑已经连接了[**光场显示屏设备**](https://www.openstageai.com/companion1)，同时打开[**OpenstageAI**](https://www.openstageai.com/download)平台（平台需更新到最新版本），可以识别到设备。
+1. Please make sure your computer is connected to the light field display correctly [**Light Field Display C1**](https://cubevi.com/products/cube-c1), and open [**OpenstageAI**](https://cubevi.com/pages/download-page) platform（newest version）to detect the device.
     
-2. 打开blender，在编辑->偏好->插件部分，导入插件zip文件安装包，安装成功后，在右侧可以看到LFD面板。
+2. Open blender, in edit->preference->plugin,import the plugin ZIP file installation package. If successful, you will see the LFD panel on the left.
     
-3. 单击面板中的连接，提示连接成功，并自动设置相机分辨率。
+3. Click the connect buttom, the SDK will detect the connected device and set the render resolution automatically.
 
-### 相机设置
+### Camera Setting
 
-4. 通过设置相机的前，后，焦平面，可以达成不同的入屏出屏效果。
+4. By setting the front, back, and focal planes of the camera, you can achieve different effects in and out of the screen.
 
-5. 远近剪裁面：只有在远近剪裁面视锥内的物体才会被渲染
+5. Near and Far Clipping Faces: Only objects within the near and far clipping face frustum will be rendered.
 
-6. 焦平面：相机的焦平面。在焦平面上的物体将获得最清晰的视觉展示效果。焦平面靠近相机的一侧会展示出屏效果，焦平面远离相机的一侧会展示入屏效果，远离焦平面的物体会变得模糊。
-
-
-### 预览界面：
-
-7. 在设备成功连接后，单击实时光场预览，会自动在C1上显示当前相机的光场预览图片。
-
-8. 单击保存宫格预览图片，会在当前设置的文件路径下保存宫格预览图片。
-
-9. 单击保存光场预览图片，会在当前设置的文件路径下保存光场预览图片。
-
-### 渲染：
-
- 10. 在设备成功连接后，点击保存视点预览图片，相机会自动在当前位置拍摄40张单视点图片（ESC取消)，在当前设置的文件路径下命名为_000.png - _039.png.
-
- 11. 在40张单视点图片渲染完成后，单击合成宫格图片，会自动将_000.png - _039.png合成为一张多视点宫格图
-
- 12. 在设备成功连接，平台打开的情况下，单击上传宫格图到3D图库，会将多视点宫格图上传到3D图库中，打开3D图库->头像->我的创作 即可观看该宫格图生成的光场图。 （宫格图最大大小为70MB)
-
-### 渲染动画：
-
- 13. 设置动画渲染的开始帧-结束帧， 单击渲染动画(ESC取消)，会自动将开始帧-结束帧的每帧宫格图渲染完成, 命名并保存到当前文件路径下的 quilt_frame_帧数.png
-
- 14. 设置动画渲染的开始帧-结束帧，设置输出视频的fps，单击将宫格图序列合成为视频，插件将把开始帧-结束帧的宫格图合成为output.mp4.
-
- 15. 单击将视频上传到3D图库，会将宫格图视频上传到3D图库中，打开3D图库->头像->我的创作 即可观看该光场视频。 （视频最大大小为70MB)
+6. Focal plane: The focal plane of the camera. Objects in the focal plane will be the clearest. The side of the focal plane close to the camera will show the in-screen effect, the side of the focal plane away from the camera will show the out-screen effect, and objects far away from the focal plane will become blurry.
 
 
 
-## 限制
+### Preview panel
 
-- 由于blender的渲染引擎限制，对于带纹理细节的场景，进行实时光场预览时会较为卡顿。
-- 目前上传平台的，可供公开的宫格图和宫格图视频大小限制为70MB。
+7. After the device is successfully connected, click the real-time light field preview, and the light field preview picture of the current camera will be automatically displayed on C1.
 
-## 讨论
+8. Click save quilt image to save the grid preview image in the currently set file path.
 
-如果有任何问题或者发现的漏洞请在[这里](TODO)告诉我们
+9. Click save light field image to save the light field image in the currently set file path.
+
+### Rendering
+
+ 10. After the device is successfully connected, click save preview image, and the camera will automatically take 40 single viewpoint images at the current location (press ESC to cancel),the name will be set from _000.png to _039.png.
+
+ 11. After the 40 single-view images are rendered, click synthesize quilt image to automatically combine the _000.png-_039.png into a quilt image.
+
+ 12. When the device is successfully connected and the platform is opened, click upload the quilt image, the SDK will upload the quilt image to the 3D gallery. Open 3D gallery -> Home -> My Creations to view the light field image generated from the quilt image. (The maximum size of the grid image is 70MB.)
+
+### Rendering animation
+
+ 13. Set the start frame-end frame of the animation rendering, click Render Animation (ESC Cancel), the quilt image of each frame of the start frame to the end frame will be automatically rendered, named and saved to the quilt_frame_index under the current file path.png
+
+ 14. Set the start frame-end frame of the animation rendering, set the FPS of the output video, click to synthesize the quilt image sequence into a video, and the SDK will combine the quilt image from the start frame to the end frame into a output.mp4.
+
+ 15. Click Upload Video to 3D Gallery, the grid diagram video will be uploaded to the 3D Gallery, open the 3D Gallery - > Home - > My Creation to watch the light field video. (The maximum video size is 70MB)
+
+
+
+## Limitation
+
+- Due to the limitations of Blender's rendering engine, real-time light field previews can lag when performing real-time light field previews for scenes with textured details.
+- Currently, the size of the grid diagram and the grid diagram video that can be uploaded to the platform is limited to 70MB.
+
+## Discussion
+
+You can report any problems in the issues.
 
 
 
