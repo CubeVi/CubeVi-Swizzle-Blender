@@ -8,7 +8,7 @@
 **Read this in other languages: [English](README.md), [中文](README_zh.md).**
 
 
-[![OpenStageAI](https://img.shields.io/badge/OpenStageAI-web-blue)](https://cubevi.com/)
+[![Cubestage](https://img.shields.io/badge/Cubestage-web-blue)](https://cubevi.com/)
 [![Blender](https://img.shields.io/badge/Blender-download-red)](https://www.blender.org/download/)
 [![Chat](https://img.shields.io/badge/chat-discord-blue)](https://cubevi.com/pages/contact)
  <!-- this badge is too long, please place it in the last one to make it pretty --> 
@@ -23,7 +23,7 @@ This SDK is developed by **CubeVi**, aims at showing the preview result of Blend
 
 ## Requirements
 
-This project is designed for [**Light Field Display C1**](https://cubevi.com/products/cube-c1), please make sure your computer is connected to the light field display correctly [**Light Field Display C1**](https://cubevi.com/products/cube-c1), user manual and openstageai app downloading [click here](https://cubevi.com/pages/download-page)
+This project is designed for [**Light Field Display C1**](https://cubevi.com/products/cube-c1), please make sure your computer is connected to the light field display correctly [**Light Field Display C1**](https://cubevi.com/products/cube-c1), user manual and Cubestage app downloading [click here](https://cubevi.com/pages/download-page)
 
 **Supporting Blender version**
 
@@ -46,7 +46,7 @@ Installation and detailed guidance [Usage](doc/doc/usage.md)
 
 ### Device connection
 
-1. Please make sure your computer is connected to the light field display correctly [**Light Field Display C1**](https://cubevi.com/products/cube-c1), and open [**OpenstageAI**](https://cubevi.com/pages/download-page) platform（newest version）to detect the device.
+1. Please make sure your computer is connected to the light field display correctly [**Light Field Display C1**](https://cubevi.com/products/cube-c1), and open [**Cubestage**](https://cubevi.com/pages/download-page) platform（newest version）to detect the device.
     
 2. Open blender, in edit->preference->plugin,import the plugin ZIP file installation package. If successful, you will see the LFD panel on the left.
     

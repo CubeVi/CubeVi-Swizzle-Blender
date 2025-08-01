@@ -1,6 +1,6 @@
 # ##### BEGIN GPL LICENSE BLOCK #####
 #
-#  Copyright © GJQ, OpenStageAI
+#  Copyright © GJQ, OpenstageAI, Cubestage
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -33,15 +33,15 @@ print(wheels_folder_path)
 # wheels_folder_path = r'D:\desktop\wheels'
 if wheels_folder_path not in sys.path:
     sys.path.append(wheels_folder_path)
-# 遍历 wheels 文件夹中的所有子文件夹
+# Iterate through all subdirectories in the wheels folder
 for folder_name in os.listdir(wheels_folder_path):
     folder_path = os.path.join(wheels_folder_path, folder_name)
 
-    # 检查是否是文件夹
+    # Check if it is a directory
     if os.path.isdir(folder_path):
-        # 假设每个子文件夹中都有一个可以导入的模块
+        # Assume each subdirectory contains an importable module
         try:
-            # 动态导入该子文件夹中的模块
+            # Dynamically import the module from the subdirectory
             module_spec = importlib.util.find_spec(folder_name)
             if module_spec is None:
                 print(f"Module '{folder_name}' not found.")
@@ -74,6 +74,7 @@ import cv2
 import base64
 from hashlib import md5
 import websocket
+import threading
 from bpy.props import StringProperty
 
 
@@ -87,52 +88,28 @@ obliquity = None
 deviation = None
 is_drawing = False
 frustum_draw_handler = None
-operator_id = 0
 
 window_name = "Real time Display"
 
 
-# def initialize_pygame_window(dis_x):
-#     # 初始化 Pygame
-#     # print(f"dis_x = {dis_x}")
-#     os.environ['SDL_VIDEO_WINDOW_POS'] = f"{dis_x},0"
-#     pygame.init()
-#
-#     # 设置窗口大小
-#     window_width, window_height = 1440, 2560  # 根据需要调整大小
-#     screen = pygame.display.set_mode((window_width, window_height),pygame.RESIZABLE)
-#
-#     # 设置窗口标题
-#     pygame.display.set_caption("LFD Viewer")
-#
-#     return screen
-
-# def update_pygame_window(screen, numpy_array):
-#     # 将 NumPy 数组转换为 Pygame 的 Surface
-#     numpy_array = numpy_array.transpose(1, 0, 2)
-#     surface = pygame.surfarray.make_surface(numpy_array)
-#
-#     # 更新窗口显示内容
-#     screen.blit(surface, (0, 0))
-#     pygame.display.flip()
 
 def initialize_cv_window():
     window_name = "Real time Display"
     monitors = get_monitors()
 
-    # 寻找满足分辨率为 1440x2560 的显示器
+    # Find monitor with resolution 1440x2560
     for monitor in monitors:
         if monitor.width == 1440 and monitor.height == 2560:
-            # 首先创建一个窗口
+            # First create a window
             cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
-            # 调整窗口大小为屏幕的分辨率
+            # Resize window to screen resolution
             cv2.resizeWindow(window_name, monitor.width, monitor.height)
 
-            # 先移动到对应显示器的左上角
+            # Move to top-left corner of target monitor
             cv2.moveWindow(window_name, monitor.x, monitor.y)
 
-            # 再设置全屏
+            # Set to fullscreen
             cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
             break
@@ -142,15 +119,12 @@ def update_cv_window(window, frame):
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
     cv2.imshow(window_name, frame)
 
-
-# def func to decrypt platform device config information
-
+# Function to decrypt platform device config information
 keycode = "3f5e1a2b4c6d7e8f9a0b1c2d3e4f5a6b"
 
 
 def unpad(data):
     return data[:-(data[-1] if type(data[-1]) == int else ord(data[-1]))]
-
 
 def bytes_to_key(data, salt, output=48):
     assert len(salt) == 8, len(salt)
@@ -161,7 +135,6 @@ def bytes_to_key(data, salt, output=48):
         key = md5(key + data).digest()
         final_key += key
     return final_key[:output]
-
 
 def decrypt(encrypted, passphrase):
     encrypted = base64.b64decode(encrypted)
@@ -180,28 +153,6 @@ def set_1():
     bpy.context.scene.render.resolution_x = 540
     bpy.context.scene.render.resolution_y = 960
 
-def on_open_choice2(ws):
-
-    data_type = "tracking"
-    data_to_send = {
-        "bizId": operator_id,
-        "bizType": "BLENDER_CLICK"
-    }
-
-    final_data = {
-        "type": data_type,
-        "data": data_to_send
-    }
-
-    ws.send(json.dumps(final_data))
-    ws.close()
-
-def c_p():
-    ws_url = "ws://127.0.0.1:9001"
-    ws = websocket.WebSocketApp(ws_url,
-                                on_open=on_open_choice2,
-                                )
-    ws.run_forever()
 
 
 class FrustumOperator(bpy.types.Operator):
@@ -212,32 +163,32 @@ class FrustumOperator(bpy.types.Operator):
 
 
     def setupCameraFrustumShader(self):
-        """设置绘制相机视锥的着色器"""
+        """Set up shader for drawing camera frustum"""
         pass
 
     def drawCameraFrustum(self, context):
-        """绘制相机视锥"""
+        """Draw camera frustum"""
         scene = context.scene
         camera = scene.camera
         clip_near = scene.clip_near
         clip_far = scene.clip_far
         focal_plane = scene.focal_plane
 
-        # 获取相机视锥的顶点
+        # Get camera frustum vertices
         coords_local = self.calculate_frustum_coordinates(camera, context, clip_near, clip_far, focal_plane)
 
-        # 创建视锥可视化
+        # Create frustum visualization
         self.create_frustum_visualization(context, coords_local, camera)
 
     def calculate_frustum_coordinates(self, camera, context, clip_near, clip_far, focal_plane):
         """
-        计算相机视锥的四个顶点，并根据相机的位置和朝向进行转换
+        Calculate four vertices of camera frustum and transform based on camera position and orientation
         """
-        # 获取相机的世界矩阵
+        # Get camera world matrix
         view_matrix = camera.matrix_world.copy()
         view_frame = camera.data.view_frame(scene=context.scene)
 
-        # 获取视锥体的四个顶点
+        # Get frustum vertices
         scale = 1.39
         view_frame_upper_right = view_frame[0]/scale
         view_frame_lower_right = view_frame[1]/scale
@@ -245,7 +196,7 @@ class FrustumOperator(bpy.types.Operator):
         view_frame_upper_left = view_frame[3]/scale
         view_frame_distance = abs(view_frame_upper_right[2])/scale
 
-        # 使用世界矩阵对视锥体坐标进行转换
+        # Transform frustum coordinates using world matrix
         coords_local = [
             # near clipping plane
             (view_matrix @ (view_frame_lower_right * clip_near)),
@@ -267,9 +218,9 @@ class FrustumOperator(bpy.types.Operator):
 
     def create_frustum_visualization(self, context, coords_local, camera):
         """
-        创建视锥可视化 (直接绘制)
+        Create frustum visualization (direct drawing)
         """
-        # 定义视锥体的边界线
+        # Define frustum boundary lines
         frustum_indices_lines = [
             # near plane
             (0, 1), (1, 2), (2, 3), (3, 0),
@@ -284,19 +235,19 @@ class FrustumOperator(bpy.types.Operator):
         frustum_shader = gpu.shader.from_builtin('UNIFORM_COLOR')
         batch_lines = batch_for_shader(frustum_shader, 'LINES', {"pos": coords_local}, indices=frustum_indices_lines)
 
-        # 绘制视锥
+        # Draw frustum
         frustum_shader.bind()
         gpu.state.depth_test_set('LESS_EQUAL')
         gpu.state.depth_mask_set(True)
 
-        # 绘制视锥的边界
-        frustum_shader.uniform_float("color", (0.3, 0, 0, 1))  # 设置颜色为红色
+        # Draw frustum boundaries
+        frustum_shader.uniform_float("color", (0.3, 0, 0, 1))  # Set color to red
         batch_lines.draw(frustum_shader)
 
         gpu.state.depth_mask_set(False)
         gpu.state.blend_set('ALPHA')
 
-        # 填充视锥的面
+        # Fill frustum faces
         frustum_indices_faces = [
             (0, 1, 2), (0, 2, 3),
             (4, 5, 6), (4, 6, 7),
@@ -307,30 +258,30 @@ class FrustumOperator(bpy.types.Operator):
         ]
         batch_faces = batch_for_shader(frustum_shader, 'TRIS', {"pos": coords_local}, indices=frustum_indices_faces)
 
-        # 设置其他面的颜色为半透明灰色
-        frustum_shader.uniform_float("color", (0.5, 0.5, 0.5, 0.1))  # 半透明灰色
+        # Set other faces color to semi-transparent gray
+        frustum_shader.uniform_float("color", (0.5, 0.5, 0.5, 0.1))  # Semi-transparent gray
         batch_faces.draw(frustum_shader)
 
-        # 设置焦平面的颜色为黄色 (黄色是 (1, 1, 0))
+        # Set focal plane color to yellow (yellow is (1, 1, 0))
         focal_plane_indices_faces = [
             (8, 9, 10), (8, 10, 11)
         ]
         focal_plane_faces = batch_for_shader(frustum_shader, 'TRIS', {"pos": coords_local},
                                              indices=focal_plane_indices_faces)
-        frustum_shader.uniform_float("color", (1, 1, 0, 0.1))  # 设置焦平面的颜色为黄色
+        frustum_shader.uniform_float("color", (1, 1, 0, 0.1))  # Set focal plane color to yellow
         focal_plane_faces.draw(frustum_shader)
 
         gpu.state.depth_test_set('NONE')
         gpu.state.blend_set('NONE')
 
     def start(self, context):
-        """开始绘制相机视锥"""
-        # 设置相机视锥和着色器
+        """Start drawing camera frustum"""
+        # Set up camera frustum and shader
         global is_drawing
         global frustum_draw_handler
         self.setupCameraFrustumShader()
 
-        # 如果没有绘制处理程序，添加它
+        # If no draw handler exists, add it
         if is_drawing:
             bpy.types.SpaceView3D.draw_handler_remove(frustum_draw_handler, 'WINDOW')
             frustum_draw_handler = None
@@ -344,17 +295,17 @@ class FrustumOperator(bpy.types.Operator):
 
 
     def execute(self, context):
-        """执行操作符"""
-        # 启动或停止视锥的绘制
+        """Execute operator"""
+        # Start or stop frustum drawing
         self.start(context)
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
-        """保持操作符运行并监控事件"""
+        """Keep operator running and monitor events"""
         return {'RUNNING_MODAL'}
 
     def invoke(self, context, event):
-        """在点击按钮时检查是否已经绘制过视锥体"""
+        """Check if frustum has been drawn when button is clicked"""
         self.start(context)
         return {'FINISHED'}
 
@@ -379,10 +330,19 @@ class connectOperator(bpy.types.Operator):
         print(get_monitors())
         print(context.scene.my_filepath)
         set_1()
-        config_path = os.path.join(os.getenv('APPDATA'), 'OpenstageAI', 'deviceConfig.json')
-        global operator_id
+        appdata_path = os.getenv('APPDATA')
+        openstage_path = os.path.join(appdata_path, 'OpenstageAI', 'deviceConfig.json')
+        cubestage_path = os.path.join(appdata_path, 'Cubestage', 'deviceConfig.json')
+        
+        if os.path.exists(openstage_path):
+            config_path = openstage_path
+        elif os.path.exists(cubestage_path):
+            config_path = cubestage_path
+        else:
+            raise FileNotFoundError(f"deviceConfig.json not found in paths:\n{openstage_path}\n{cubestage_path}")
+        
         operator_id = 0
-        c_p()
+        send_via_websockets(on_open_choice2, operator_id=operator_id, biz_type="BLENDER_CLICK")
         with open(config_path, 'r', encoding='utf-8') as f:
             device_info = json.load(f)
 
@@ -407,56 +367,53 @@ class LFDSaveOperator(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     _handle = None
 
-    # 执行操作的前提
+    # Prerequisites for operation
     @classmethod
     def poll(cls, context: bpy.types.Context):
         if context.scene.camera is not None and flag is False:
             return True
         return False
 
-    # 数据初始化
+    # Initialize data
     def __init__(self):
-        self.offscreen = None  # 用于单相机纹理的存储
-        self.final_offscreen = None  # 用于存储拼接后的大纹理
-        self.display_offscreen = None  # 用于显示纹理的离屏缓冲区
+        self.offscreen = None  # For storing single camera texture
+        self.final_offscreen = None  # For storing combined large texture
+        self.display_offscreen = None  # Offscreen buffer for displaying texture
         self.shader = None
         self.clear_shader = None
         self.batch = None
         self.clear_batch = None
-        self.display_batch = None  # 新增，用于 display_shader
+        self.display_batch = None  # Added for display_shader
         self.view_matrix = None
         self.projection_matrix = None
-        self.render_width = 540  # 每张纹理的宽度
-        self.render_height = 960  # 每张纹理的高度
+        self.render_width = 540  # Width of each texture
+        self.render_height = 960  # Height of each texture
         self.grid_rows = 5
         self.grid_cols = 8
         self.final_width = self.render_width * self.grid_cols
         self.final_height = self.render_height * self.grid_rows
-        self.display_shader = None  # 用于显示最终纹理的着色器
+        self.display_shader = None  # For displaying final texture
 
     def setup_offscreen_rendering(self):
-        """设置小纹理和大纹理的 Offscreen"""
+        """Set up small and large texture offscreens"""
         try:
-            # 单个纹理的 Offscreen
+            # Single texture offscreen
             self.offscreen = gpu.types.GPUOffScreen(self.render_width, self.render_height)
-            # print(f"单个 Offscreen 创建成功: {self.render_width}x{self.render_height}")
 
-            # 最终拼接的大纹理 Offscreen
+            # Final combined texture offscreen
             self.final_offscreen = gpu.types.GPUOffScreen(self.final_width, self.final_height)
-            # print(f"最终拼接 Offscreen 创建成功: {self.final_width}x{self.final_height}")
 
-            # 用于显示纹理的 Offscreen（展示纹理）
+            # Offscreen for displaying texture
             self.display_offscreen = gpu.types.GPUOffScreen(1440, 2560)
-            # print(f"展示的交织 OffScreen 创建成功")
 
             return True
         except Exception as e:
-            self.report({'ERROR'}, f"创建离屏缓冲区失败: {e}")
-            print(f"创建离屏缓冲区失败: {e}")
+            self.report({'ERROR'}, f"Failed to create offscreen buffer: {e}")
+            print(f"Failed to create offscreen buffer: {e}")
             return False
 
     def setup_shader(self):
-        """创建用于绘制纹理的着色器"""
+        """Create shader for drawing textures"""
         vertex_shader = '''
             uniform vec2 scale;
             uniform vec2 offset;
@@ -484,13 +441,12 @@ class LFDSaveOperator(bpy.types.Operator):
 
         try:
             self.shader = gpu.types.GPUShader(vertex_shader, fragment_shader)
-            # print("着色器编译成功")
+            # print("Shader compilation successful")
         except Exception as e:
-            self.report({'ERROR'}, f"着色器编译失败: {e}")
-            print(f"着色器编译失败: {e}")
+            self.report({'ERROR'}, f"Shader compilation failed: {e}")
+            print(f"Shader compilation failed: {e}")
             return False
-
-        # 定义顶点和索引
+        # Define vertices and indices
         vertices = [
             (-1, -1, 0, 0),  # Bottom-left
             (1, -1, 1, 0),  # Bottom-right
@@ -509,7 +465,7 @@ class LFDSaveOperator(bpy.types.Operator):
         return True
 
     def setup_display_shader(self):
-        """为 display_offscreen 创建专门的着色器"""
+        """Create dedicated shader for display_offscreen"""
         vertex_shader = '''
             in vec2 pos;
             in vec2 texCoord;
@@ -554,9 +510,9 @@ class LFDSaveOperator(bpy.types.Operator):
             vec2 get_uv_from_choice(vec2 pos, float choice_float) {
                 float choice = floor(choice_float * _ImgsCountAll);
                 vec2 choice_vec = vec2(
-                _ImgsCountX - 1.0 - mod(choice, _ImgsCountX),  // 从右到左
+                _ImgsCountX - 1.0 - mod(choice, _ImgsCountX),  // Right to left
                 // _ImgsCountY - 1.0 - floor(choice / _ImgsCountX) 
-                floor(choice / _ImgsCountX) // 从下到上
+                floor(choice / _ImgsCountX) // Bottom to top
                 );
 
                 vec2 reciprocals = vec2(1.0 / _ImgsCountX, 1.0 / _ImgsCountY);
@@ -579,19 +535,19 @@ class LFDSaveOperator(bpy.types.Operator):
 
         try:
             self.display_shader = gpu.types.GPUShader(vertex_shader, fragment_shader)
-            # print("display_offscreen 着色器编译成功")
+            # print("Display_offscreen shader compilation successful")
         except gpu.types.GPUShaderCompilationError as e:
-            self.report({'ERROR'}, f"display_offscreen 着色器编译失败: {e}")
-            print(f"display_offscreen 着色器编译失败: {e}")
+            self.report({'ERROR'}, f"Display_offscreen shader compilation failed: {e}")
+            print(f"Display_offscreen shader compilation failed: {e}")
             self.display_shader = None
             return False
         except Exception as e:
-            self.report({'ERROR'}, f"display_offscreen 着色器初始化失败: {e}")
-            print(f"display_offscreen 着色器初始化失败: {e}")
+            self.report({'ERROR'}, f"Display_offscreen shader initialization failed: {e}")
+            print(f"Display_offscreen shader initialization failed: {e}")
             self.display_shader = None
             return False
 
-        # 定义顶点和索引，用于绘制显示纹理
+        # Define vertices and indices for drawing display texture
         vertices = [
             (-1, -1, 0, 0),  # Bottom-left
             (1, -1, 1, 0),  # Bottom-right
@@ -610,17 +566,17 @@ class LFDSaveOperator(bpy.types.Operator):
         return True
 
     def setup_clear_shader(self):
-        """创建用于清除颜色缓冲区的简单着色器"""
-        # 使用内置的 'UNIFORM_COLOR' 着色器
+        """Create simple shader for clearing color buffer"""
+        # Use built-in 'UNIFORM_COLOR' shader
         self.clear_shader = gpu.shader.from_builtin('UNIFORM_COLOR')
         self.clear_batch = batch_for_shader(
             self.clear_shader, 'TRI_FAN',
             {"pos": [(-1, -1), (1, -1), (1, 1), (-1, 1)]}
         )
-        # print("清除着色器和批处理创建成功")
+        # print("Clear shader and batch created successfully")
 
     def __update_matrices(self, context):
-        """更新视图和投影矩阵"""
+        """Update view and projection matrices"""
         camera = context.scene.camera
         if camera:
             depsgraph = context.evaluated_depsgraph_get()
@@ -632,19 +588,19 @@ class LFDSaveOperator(bpy.types.Operator):
                 scale_x=1.0,
                 scale_y=1.0
             )
-            # print("矩阵更新成功")
+            # print("Matrix update successful")
         else:
-            self.report({'ERROR'}, "场景中未找到相机！")
-            # print("场景中未找到相机！")
+            self.report({'ERROR'}, "No camera found in scene!")
+            # print("No camera found in scene!")
 
     def render_quilt(self, context):
-        """渲染并拼接纹理到 final_offscreen"""
+        """Render and combine textures to final_offscreen"""
         self.__update_matrices(context)
         context.area.tag_redraw()
 
-        # 绑定 final_offscreen 以进行拼接
+        # Bind final_offscreen for combining
         with self.final_offscreen.bind():
-            # 获取当前的投影矩阵
+            # Get current projection matrix
             viewMatrix = gpu.matrix.get_model_view_matrix()
             projectionMatrix = gpu.matrix.get_projection_matrix()
 
@@ -654,18 +610,18 @@ class LFDSaveOperator(bpy.types.Operator):
             # camera_size = f * math.tan(fov / 2)
 
             with gpu.matrix.push_pop():
-                # 重置矩阵 -> 使用标准设备坐标 [-1, 1]
+                # Reset matrix -> Use standard device coordinates [-1, 1]
                 gpu.matrix.load_matrix(Matrix.Identity(4))
                 gpu.matrix.load_projection_matrix(Matrix.Identity(4))
 
-                # 设置混合和深度状态
+                # Set blend and depth states
                 gpu.state.depth_test_set('GREATER_EQUAL')
                 gpu.state.depth_mask_set(True)
                 gpu.state.blend_set('ALPHA')
 
-                # 清除 final_offscreen 的颜色缓冲区
+                # Clear final_offscreen color buffer
                 self.clear_shader.bind()
-                self.clear_shader.uniform_float("color", (0.0, 0.0, 0.0, 1.0))  # 设置清除颜色为黑色
+                self.clear_shader.uniform_float("color", (0.0, 0.0, 0.0, 1.0))  # Set clear color to black
                 self.clear_batch.draw(self.clear_shader)
 
                 start_time = time.time()
@@ -677,7 +633,7 @@ class LFDSaveOperator(bpy.types.Operator):
                     x_offset = col * self.render_width
                     y_offset = row * self.render_height
 
-                    # 计算中心位置在 NDC 中的坐标
+                    # Calculate center position in NDC coordinates
                     center_x = (x_offset + self.render_width / 2) / self.final_width * 2 - 1
                     center_y = (y_offset + self.render_height / 2) / self.final_height * 2 - 1
                     cameraDistance = context.scene.focal_plane
@@ -686,12 +642,12 @@ class LFDSaveOperator(bpy.types.Operator):
                     offsetAngle = (0.5 - idx / (40 - 1)) * math.radians(40)
                     # offset = - f * math.tan(offsetAngle)
                     offset = cameraDistance * offsetAngle
-                    # 计算新的view matrix
+                    # Calculate new view matrix
                     # direction = self.view_matrix.col[2].xyz.normalized()
                     # new_offset = direction * offset
                     new_view_matrix = Matrix.Translation((offset, 0, 0)) @ self.view_matrix
                     # new_view_matrix = self.view_matrix.copy()
-                    # 计算新的projection matrix
+                    # Calculate new projection matrix
                     new_projection_matrix = self.projection_matrix.copy()
                     new_projection_matrix[0][2] += offset / (cameraSize * (1440 / 2560))
 
@@ -705,10 +661,10 @@ class LFDSaveOperator(bpy.types.Operator):
                     new_projection_matrix[2][3] = clip_2
 
                     # print(f"fov={fov}, f={f}, near={near},clip1={clip_1},clip2={clip_2} offsetAngle={offsetAngle}, offset={offset}")
-                    # print(f"第{idx + 1}个纹理，viewMatrix为{new_view_matrix},projectionMatrix为{new_projection_matrix}")
-                    # print(f"渲染第 {idx + 1} 张纹理，位置: ({x_offset}, {y_offset})")
+                    # print(f"Texture {idx + 1}, viewMatrix={new_view_matrix},projectionMatrix={new_projection_matrix}")
+                    # print(f"Rendering texture {idx + 1}, position: ({x_offset}, {y_offset})")
 
-                    # 渲染到单个 offscreen
+                    # Render to single offscreen
                     with self.offscreen.bind():
                         self.offscreen.draw_view3d(
                             scene=context.scene,
@@ -719,7 +675,7 @@ class LFDSaveOperator(bpy.types.Operator):
                             projection_matrix=new_projection_matrix
                         )
 
-                    # 绘制单个纹理到 final_offscreen 的指定位置
+                    # Draw single texture to specified position in final_offscreen
                     self.shader.bind()
                     self.shader.uniform_sampler("image", self.offscreen.texture_color)
                     self.shader.uniform_float("scale", (
@@ -728,34 +684,34 @@ class LFDSaveOperator(bpy.types.Operator):
                     self.batch.draw(self.shader)
                     gpu.shader.unbind()
 
-                # 重置混合模式和深度状态
+                # Reset blend mode and depth states
                 gpu.state.blend_set('NONE')
                 gpu.state.depth_mask_set(False)
                 gpu.state.depth_test_set('NONE')
 
-                # 重新加载原始矩阵
+                # Reload original matrices
                 gpu.matrix.load_matrix(viewMatrix)
                 gpu.matrix.load_projection_matrix(projectionMatrix)
 
                 end_time = time.time()
-                # print(f"渲染并拼接 {self.grid_rows * self.grid_cols} 张纹理耗时: {end_time - start_time:.6f} 秒")
+                # print(f"Rendering and combining {self.grid_rows * self.grid_cols} textures took: {end_time - start_time:.6f} seconds")
 
     def save(self,context):
-        """在视口中绘制拼接后的纹理"""
+        """Draw combined texture in viewport"""
         if self.display_offscreen:
-            # 设置视口绘制区域
+            # Set viewport drawing area
             draw_x = 0
             draw_y = 0
-            draw_width = 1440  # 根据需要调整显示大小
-            draw_height = 2560  # 直接设定为固定高度
+            draw_width = 1440  # Adjust display size as needed
+            draw_height = 2560  # Fixed height
 
-            # 绘制 final_offscreen 的纹理到 display_offscreen
+            # Draw final_offscreen texture to display_offscreen
             with self.display_offscreen.bind():
                 if self.display_shader:
                     try:
                         self.display_shader.bind()
                         self.display_shader.uniform_sampler("image1", self.final_offscreen.texture_color)
-                        self.display_shader.uniform_float("_Slope", obliquity)  # 正确的 uniform 设置
+                        self.display_shader.uniform_float("_Slope", obliquity)  # Correct uniform setting
                         self.display_shader.uniform_float("_Interval", linenumber)
                         self.display_shader.uniform_float("_X0", deviation)
                         self.display_shader.uniform_float("_ImgsCountX", 8.0)
@@ -766,35 +722,35 @@ class LFDSaveOperator(bpy.types.Operator):
                         self.display_batch.draw(self.display_shader)
                         gpu.shader.unbind()
                     except Exception as e:
-                        print(f"绘制 display_shader 时出错: {e}")
+                        print(f"Error drawing display_shader: {e}")
                 else:
-                    print("display_shader 未初始化，无法绑定。")
+                    print("Display_shader not initialized, cannot bind.")
 
-            # 假设参数
+            # Assumed parameters
             np.set_printoptions(threshold=np.inf)
             s = time.time()
             width, height, channels = 1440, 2560, 4
-            padding = 0  # 每行有 16 字节的填充
-            stride_row = width * channels + padding  # 每行的实际字节数
+            padding = 0  # 16 bytes padding per row
+            stride_row = width * channels + padding  # Actual bytes per row
 
-            # 创建一个模拟的非连续存储的 buffer
+            # Create simulated non-contiguous buffer
             pixel_data = self.display_offscreen.texture_color.read()
 
-            # 将非连续的 buffer 转换为 numpy.array
+            # Convert non-contiguous buffer to numpy.array
             buffer_array = np.array(pixel_data, dtype=np.uint8)
 
-            # 使用 strides 构建逻辑视图
+            # Build logical view using strides
             logical_view = np.lib.stride_tricks.as_strided(
                 buffer_array,
                 shape=(height, width, channels),
                 strides=(stride_row, channels, 1)
             )
 
-            # 查看逻辑视图
+            # View logical view
             # print(logical_view.shape)
             image_data = np.flipud(logical_view)
             rgb_data = image_data[:, :, :3]
-            # 图像保存
+            # Save image
             image = Image.fromarray(rgb_data, 'RGB')
             output_path = context.scene.my_filepath
             print(output_path)
@@ -807,34 +763,34 @@ class LFDSaveOperator(bpy.types.Operator):
             # print(f"time is {e - s}")
             self.report({'INFO'}, f"Picture saved successfully, path is {output_path}")
 
-    # 点击后调用该方法
+    # Method called after clicking
     def execute(self, context):
-        global operator_id
+        
         operator_id = 1
-        c_p()
-        # 判断离屏渲染
+        send_via_websockets(on_open_choice2, operator_id=operator_id, biz_type="BLENDER_CLICK")
+        # Check offscreen rendering
         if not self.setup_offscreen_rendering():
             return {'CANCELLED'}
 
-        # 判断着色器设置
+        # Check shader setup
         if not self.setup_shader():
             return {'CANCELLED'}
 
-        # 设置用于清除缓冲区的着色器
+        # Setup shader for clearing buffer
         self.setup_clear_shader()
 
-        # 设置用于显示 final_offscreen 的 display_offscreen 着色器
+        # Setup display_offscreen shader for showing final_offscreen
         if not self.setup_display_shader():
             return {'CANCELLED'}
 
-        # 渲染和拼接纹理
+        # Render and combine textures
         self.render_quilt(context)
 
         self.save(context)
 
         return {'FINISHED'}
 
-    # 在execute之前执行这个方法，用作初始化
+    # Execute this method before execute for initialization
     def invoke(self, context, event):
         return self.execute(context)
 
@@ -846,56 +802,56 @@ class QuiltSaveOperator(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     _handle = None
 
-    # 执行操作的前提
+    # Prerequisites for operation
     @classmethod
     def poll(cls, context: bpy.types.Context):
         if context.scene.camera is not None and flag is False:
             return True
         return False
 
-    # 数据初始化
+    # Initialize data
     def __init__(self):
-        self.offscreen = None  # 用于单相机纹理的存储
-        self.final_offscreen = None  # 用于存储拼接后的大纹理
-        self.display_offscreen = None  # 用于显示纹理的离屏缓冲区
+        self.offscreen = None  # For storing single camera texture
+        self.final_offscreen = None  # For storing combined large texture
+        self.display_offscreen = None  # Offscreen buffer for displaying texture
         self.shader = None
         self.clear_shader = None
         self.batch = None
         self.clear_batch = None
-        self.display_batch = None  # 新增，用于 display_shader
+        self.display_batch = None  # Added for display_shader
         self.view_matrix = None
         self.projection_matrix = None
-        self.render_width = 540  # 每张纹理的宽度
-        self.render_height = 960  # 每张纹理的高度
+        self.render_width = 540  # Width of each texture
+        self.render_height = 960  # Height of each texture
         self.grid_rows = 5
         self.grid_cols = 8
         self.final_width = self.render_width * self.grid_cols
         self.final_height = self.render_height * self.grid_rows
-        self.display_shader = None  # 用于显示最终纹理的着色器
+        self.display_shader = None  # For displaying final texture
 
     def setup_offscreen_rendering(self):
-        """设置小纹理和大纹理的 Offscreen"""
+        """Setup small and large texture offscreens"""
         try:
-            # 单个纹理的 Offscreen
+            # Single texture offscreen
             self.offscreen = gpu.types.GPUOffScreen(self.render_width, self.render_height)
-            # print(f"单个 Offscreen 创建成功: {self.render_width}x{self.render_height}")
+            # print(f"Single Offscreen created successfully: {self.render_width}x{self.render_height}")
 
-            # 最终拼接的大纹理 Offscreen
+            # Final combined texture offscreen
             self.final_offscreen = gpu.types.GPUOffScreen(self.final_width, self.final_height)
-            # print(f"最终拼接 Offscreen 创建成功: {self.final_width}x{self.final_height}")
+            # print(f"Final combined Offscreen created successfully: {self.final_width}x{self.final_height}")
 
-            # 用于显示纹理的 Offscreen（展示纹理）
+            # Offscreen for displaying texture (display texture)
             self.display_offscreen = gpu.types.GPUOffScreen(1440, 2560)
-            # print(f"展示的交织 OffScreen 创建成功")
+            # print(f"Display interlaced OffScreen created successfully")
 
             return True
         except Exception as e:
-            self.report({'ERROR'}, f"创建离屏缓冲区失败: {e}")
-            print(f"创建离屏缓冲区失败: {e}")
+            self.report({'ERROR'}, f"Failed to create offscreen buffer: {e}")
+            print(f"Failed to create offscreen buffer: {e}")
             return False
 
     def setup_shader(self):
-        """创建用于绘制纹理的着色器"""
+        """Create shader for drawing textures"""
         vertex_shader = '''
             uniform vec2 scale;
             uniform vec2 offset;
@@ -931,13 +887,13 @@ class QuiltSaveOperator(bpy.types.Operator):
 
         try:
             self.shader = gpu.types.GPUShader(vertex_shader, fragment_shader)
-            # print("着色器编译成功")
+            # print("Shader compilation successful")
         except Exception as e:
-            self.report({'ERROR'}, f"着色器编译失败: {e}")
-            print(f"着色器编译失败: {e}")
+            self.report({'ERROR'}, f"Shader compilation failed: {e}")
+            print(f"Shader compilation failed: {e}")
             return False
 
-        # 定义顶点和索引
+        # Define vertices and indices
         vertices = [
             (-1, -1, 0, 0),  # Bottom-left
             (1, -1, 1, 0),  # Bottom-right
@@ -956,7 +912,7 @@ class QuiltSaveOperator(bpy.types.Operator):
         return True
 
     def setup_display_shader(self):
-        """为 display_offscreen 创建专门的着色器"""
+        """Create dedicated shader for display_offscreen"""
         vertex_shader = '''
             in vec2 pos;
             in vec2 texCoord;
@@ -1001,9 +957,9 @@ class QuiltSaveOperator(bpy.types.Operator):
             vec2 get_uv_from_choice(vec2 pos, float choice_float) {
                 float choice = floor(choice_float * _ImgsCountAll);
                 vec2 choice_vec = vec2(
-                _ImgsCountX - 1.0 - mod(choice, _ImgsCountX),  // 从右到左
+                _ImgsCountX - 1.0 - mod(choice, _ImgsCountX),  // Right to left
                 // _ImgsCountY - 1.0 - floor(choice / _ImgsCountX) 
-                floor(choice / _ImgsCountX) // 从下到上
+                floor(choice / _ImgsCountX) // Bottom to top
                 );
 
                 vec2 reciprocals = vec2(1.0 / _ImgsCountX, 1.0 / _ImgsCountY);
@@ -1026,15 +982,15 @@ class QuiltSaveOperator(bpy.types.Operator):
 
         try:
             self.display_shader = gpu.types.GPUShader(vertex_shader, fragment_shader)
-            # print("display_offscreen 着色器编译成功")
+            # print("Display_offscreen shader compilation successful")
         except gpu.types.GPUShaderCompilationError as e:
-            self.report({'ERROR'}, f"display_offscreen 着色器编译失败: {e}")
-            print(f"display_offscreen 着色器编译失败: {e}")
+            self.report({'ERROR'}, f"Display_offscreen shader compilation failed: {e}")
+            print(f"Display_offscreen shader compilation failed: {e}")
             self.display_shader = None
             return False
         except Exception as e:
-            self.report({'ERROR'}, f"display_offscreen 着色器初始化失败: {e}")
-            print(f"display_offscreen 着色器初始化失败: {e}")
+            self.report({'ERROR'}, f"Display_offscreen shader initialization failed: {e}")
+            print(f"Display_offscreen shader initialization failed: {e}")
             self.display_shader = None
             return False
 
@@ -1055,19 +1011,18 @@ class QuiltSaveOperator(bpy.types.Operator):
         )
 
         return True
-
     def setup_clear_shader(self):
-        """创建用于清除颜色缓冲区的简单着色器"""
-        # 使用内置的 'UNIFORM_COLOR' 着色器
+        """Create a simple shader for clearing the color buffer"""
+        # Use built-in 'UNIFORM_COLOR' shader
         self.clear_shader = gpu.shader.from_builtin('UNIFORM_COLOR')
         self.clear_batch = batch_for_shader(
             self.clear_shader, 'TRI_FAN',
             {"pos": [(-1, -1), (1, -1), (1, 1), (-1, 1)]}
         )
-        # print("清除着色器和批处理创建成功")
+        # print("Clear shader and batch created successfully")
 
     def __update_matrices(self, context):
-        """更新视图和投影矩阵"""
+        """Update view and projection matrices"""
         camera = context.scene.camera
         if camera:
             depsgraph = context.evaluated_depsgraph_get()
@@ -1079,19 +1034,19 @@ class QuiltSaveOperator(bpy.types.Operator):
                 scale_x=1.0,
                 scale_y=1.0
             )
-            # print("矩阵更新成功")
+            # print("Matrix update successful")
         else:
-            self.report({'ERROR'}, "场景中未找到相机！")
-            # print("场景中未找到相机！")
+            self.report({'ERROR'}, "No camera found in scene!")
+            # print("No camera found in scene!")
 
     def render_quilt(self, context):
-        """渲染并拼接纹理到 final_offscreen"""
+        """Render and combine textures to final_offscreen"""
         self.__update_matrices(context)
         context.area.tag_redraw()
 
-        # 绑定 final_offscreen 以进行拼接
+        # Bind final_offscreen for combining
         with self.final_offscreen.bind():
-            # 获取当前的投影矩阵
+            # Get current projection matrix
             viewMatrix = gpu.matrix.get_model_view_matrix()
             projectionMatrix = gpu.matrix.get_projection_matrix()
 
@@ -1101,18 +1056,18 @@ class QuiltSaveOperator(bpy.types.Operator):
             # camera_size = f * math.tan(fov / 2)
 
             with gpu.matrix.push_pop():
-                # 重置矩阵 -> 使用标准设备坐标 [-1, 1]
+                # Reset matrix -> Use standard device coordinates [-1, 1]
                 gpu.matrix.load_matrix(Matrix.Identity(4))
                 gpu.matrix.load_projection_matrix(Matrix.Identity(4))
 
-                # 设置混合和深度状态
+                # Set blend and depth states
                 gpu.state.depth_test_set('GREATER_EQUAL')
                 gpu.state.depth_mask_set(True)
                 gpu.state.blend_set('ALPHA')
 
-                # 清除 final_offscreen 的颜色缓冲区
+                # Clear final_offscreen color buffer
                 self.clear_shader.bind()
-                self.clear_shader.uniform_float("color", (0.0, 0.0, 0.0, 1.0))  # 设置清除颜色为黑色
+                self.clear_shader.uniform_float("color", (0.0, 0.0, 0.0, 1.0))  # Set clear color to black
                 self.clear_batch.draw(self.clear_shader)
 
                 start_time = time.time()
@@ -1124,7 +1079,7 @@ class QuiltSaveOperator(bpy.types.Operator):
                     x_offset = col * self.render_width
                     y_offset = row * self.render_height
 
-                    # 计算中心位置在 NDC 中的坐标
+                    # Calculate center position in NDC coordinates
                     center_x = (x_offset + self.render_width / 2) / self.final_width * 2 - 1
                     center_y = (y_offset + self.render_height / 2) / self.final_height * 2 - 1
                     cameraDistance = context.scene.focal_plane
@@ -1133,12 +1088,12 @@ class QuiltSaveOperator(bpy.types.Operator):
                     offsetAngle = (0.5 - idx / (40 - 1)) * math.radians(40)
                     # offset = - f * math.tan(offsetAngle)
                     offset = cameraDistance * offsetAngle
-                    # 计算新的view matrix
+                    # Calculate new view matrix
                     # direction = self.view_matrix.col[2].xyz.normalized()
                     # new_offset = direction * offset
                     new_view_matrix = Matrix.Translation((offset, 0, 0)) @ self.view_matrix
                     # new_view_matrix = self.view_matrix.copy()
-                    # 计算新的projection matrix
+                    # Calculate new projection matrix
                     new_projection_matrix = self.projection_matrix.copy()
                     new_projection_matrix[0][2] += offset / (cameraSize * (1440 / 2560))
 
@@ -1152,10 +1107,10 @@ class QuiltSaveOperator(bpy.types.Operator):
                     new_projection_matrix[2][3] = clip_2
 
                     # print(f"fov={fov}, f={f}, near={near},clip1={clip_1},clip2={clip_2} offsetAngle={offsetAngle}, offset={offset}")
-                    # print(f"第{idx + 1}个纹理，viewMatrix为{new_view_matrix},projectionMatrix为{new_projection_matrix}")
-                    # print(f"渲染第 {idx + 1} 张纹理，位置: ({x_offset}, {y_offset})")
+                    # print(f"Texture {idx + 1}, viewMatrix={new_view_matrix}, projectionMatrix={new_projection_matrix}")
+                    # print(f"Rendering texture {idx + 1}, position: ({x_offset}, {y_offset})")
 
-                    # 渲染到单个 offscreen
+                    # Render to single offscreen
                     with self.offscreen.bind():
                         self.offscreen.draw_view3d(
                             scene=context.scene,
@@ -1166,7 +1121,7 @@ class QuiltSaveOperator(bpy.types.Operator):
                             projection_matrix=new_projection_matrix
                         )
 
-                    # 绘制单个纹理到 final_offscreen 的指定位置
+                    # Draw single texture to specified position in final_offscreen
                     self.shader.bind()
                     self.shader.uniform_sampler("image", self.offscreen.texture_color)
                     self.shader.uniform_float("scale", (
@@ -1175,39 +1130,39 @@ class QuiltSaveOperator(bpy.types.Operator):
                     self.batch.draw(self.shader)
                     gpu.shader.unbind()
 
-                # 重置混合模式和深度状态
+                # Reset blend mode and depth states
                 gpu.state.blend_set('NONE')
                 gpu.state.depth_mask_set(False)
                 gpu.state.depth_test_set('NONE')
 
-                # 重新加载原始矩阵
+                # Reload original matrices
                 gpu.matrix.load_matrix(viewMatrix)
                 gpu.matrix.load_projection_matrix(projectionMatrix)
 
                 end_time = time.time()
-                # print(f"渲染并拼接 {self.grid_rows * self.grid_cols} 张纹理耗时: {end_time - start_time:.6f} 秒")
+                # print(f"Rendering and combining {self.grid_rows * self.grid_cols} textures took: {end_time - start_time:.6f} seconds")
 
     def save(self,context):
-        """在视口中绘制拼接后的纹理"""
-        # 将非连续的 buffer 转换为 numpy.array
+        """Draw combined texture in viewport"""
+        # Convert non-contiguous buffer to numpy.array
         width, height, channels = 4320, 4800, 4
-        padding = 0  # 每行有 16 字节的填充
-        stride_row = width * channels + padding  # 每行的实际字节数
+        padding = 0  # 16 bytes padding per row
+        stride_row = width * channels + padding  # Actual bytes per row
 
-        # 创建一个模拟的非连续存储的 buffer
+        # Create simulated non-contiguous buffer
         pixel_data = self.final_offscreen.texture_color.read()
 
-        # 将非连续的 buffer 转换为 numpy.array
+        # Convert non-contiguous buffer to numpy.array
         buffer_array = np.array(pixel_data, dtype=np.uint8)
 
-        # 使用 strides 构建逻辑视图
+        # Build logical view using strides
         logical_view = np.lib.stride_tricks.as_strided(
             buffer_array,
             shape=(height, width, channels),
             strides=(stride_row, channels, 1)
         )
 
-        # 查看逻辑视图
+        # View logical view
         # print(logical_view.shape)
         image_data = np.flipud(logical_view)
         rgb_data = image_data[:, :, :3]
@@ -1223,35 +1178,33 @@ class QuiltSaveOperator(bpy.types.Operator):
         # # print(f"time is {e - s}")
         self.report({'INFO'}, f"Picture saved successfully, path is {output_path}")
 
-    # 点击后调用该方法
     def execute(self, context):
-        # 判断离屏渲染
-        global operator_id
+        # Check offscreen rendering
+        
         operator_id = 1
-        c_p()
+        send_via_websockets(on_open_choice2, operator_id=operator_id, biz_type="BLENDER_CLICK")
 
         if not self.setup_offscreen_rendering():
             return {'CANCELLED'}
 
-        # 判断着色器设置
+        # Check shader setup
         if not self.setup_shader():
             return {'CANCELLED'}
 
-        # 设置用于清除缓冲区的着色器
+        # Setup shader for clearing buffer
         self.setup_clear_shader()
 
-        # 设置用于显示 final_offscreen 的 display_offscreen 着色器
+        # Setup display_offscreen shader for showing final_offscreen
         if not self.setup_display_shader():
             return {'CANCELLED'}
 
-        # 渲染和拼接纹理
+        # Render and combine textures
         self.render_quilt(context)
 
         self.save(context)
 
         return {'FINISHED'}
 
-    # 在execute之前执行这个方法，用作初始化
     def invoke(self, context, event):
         return self.execute(context)
 
@@ -1262,7 +1215,7 @@ class LFDPreviewOperator(bpy.types.Operator):
     bl_label = "Realtime LightField Preview"
     bl_options = {'REGISTER', 'UNDO'}
 
-    _handle = None  # 用于存储绘制句柄
+    _handle = None  # Handle for storing draw handler
 
     # display_x: IntProperty(
     #     name="x-axis of display",
@@ -1270,58 +1223,55 @@ class LFDPreviewOperator(bpy.types.Operator):
     #     default=2560,
     # )
 
-    # 执行操作的前提
+    # Prerequisites for operation
     @classmethod
     def poll(cls, context: bpy.types.Context):
         if context.scene.camera is not None and flag is False:
             return True
         return False
 
-    # 数据初始化
+    # Initialize data
     def __init__(self):
-        self.offscreen = None  # 用于单相机纹理的存储
-        self.final_offscreen = None  # 用于存储拼接后的大纹理
-        self.display_offscreen = None  # 用于显示纹理的离屏缓冲区
+        self.offscreen = None  # For storing single camera texture
+        self.final_offscreen = None  # For storing combined large texture
+        self.display_offscreen = None  # Offscreen buffer for displaying texture
         self.shader = None
         self.clear_shader = None
         self.batch = None
         self.clear_batch = None
-        self.display_batch = None  # 新增，用于 display_shader
+        self.display_batch = None  # Added for display_shader
         self.view_matrix = None
         self.projection_matrix = None
-        self.render_width = 540  # 每张纹理的宽度
-        self.render_height = 960  # 每张纹理的高度
+        self.render_width = 540  # Width of each texture
+        self.render_height = 960  # Height of each texture
         self.grid_rows = 5
         self.grid_cols = 8
         self.final_width = self.render_width * self.grid_cols
         self.final_height = self.render_height * self.grid_rows
-        self.display_shader = None  # 用于显示最终纹理的着色器
+        self.display_shader = None  # For displaying final texture
         self.screen = None
         self.fps = 10
 
     def setup_offscreen_rendering(self):
-        """设置小纹理和大纹理的 Offscreen"""
+        """Setup small and large texture offscreens"""
         try:
-            # 单个纹理的 Offscreen
+            # Single texture offscreen
             self.offscreen = gpu.types.GPUOffScreen(self.render_width, self.render_height)
-            # print(f"单个 Offscreen 创建成功: {self.render_width}x{self.render_height}")
 
-            # 最终拼接的大纹理 Offscreen
+            # Final combined texture offscreen
             self.final_offscreen = gpu.types.GPUOffScreen(self.final_width, self.final_height)
-            # print(f"最终拼接 Offscreen 创建成功: {self.final_width}x{self.final_height}")
 
-            # 用于显示纹理的 Offscreen（展示纹理）
+            # Offscreen for displaying texture
             self.display_offscreen = gpu.types.GPUOffScreen(1440, 2560)
-            # print(f"展示的交织 OffScreen 创建成功")
 
             return True
         except Exception as e:
-            self.report({'ERROR'}, f"创建离屏缓冲区失败: {e}")
-            print(f"创建离屏缓冲区失败: {e}")
+            self.report({'ERROR'}, f"Failed to create offscreen buffer: {e}")
+            print(f"Failed to create offscreen buffer: {e}")
             return False
 
     def setup_shader(self):
-        """创建用于绘制纹理的着色器"""
+        """Create shader for drawing textures"""
         vertex_shader = '''
             uniform vec2 scale;
             uniform vec2 offset;
@@ -1349,13 +1299,12 @@ class LFDPreviewOperator(bpy.types.Operator):
 
         try:
             self.shader = gpu.types.GPUShader(vertex_shader, fragment_shader)
-            # print("着色器编译成功")
         except Exception as e:
-            self.report({'ERROR'}, f"着色器编译失败: {e}")
-            print(f"着色器编译失败: {e}")
+            self.report({'ERROR'}, f"Shader compilation failed: {e}")
+            print(f"Shader compilation failed: {e}")
             return False
 
-        # 定义顶点和索引
+        # Define vertices and indices
         vertices = [
             (-1, -1, 0, 0),  # Bottom-left
             (1, -1, 1, 0),  # Bottom-right
@@ -1374,7 +1323,7 @@ class LFDPreviewOperator(bpy.types.Operator):
         return True
 
     def setup_display_shader(self):
-        """为 display_offscreen 创建专门的着色器"""
+        """Create dedicated shader for display_offscreen"""
         vertex_shader = '''
             in vec2 pos;
             in vec2 texCoord;
@@ -1444,19 +1393,18 @@ class LFDPreviewOperator(bpy.types.Operator):
 
         try:
             self.display_shader = gpu.types.GPUShader(vertex_shader, fragment_shader)
-            # print("display_offscreen 着色器编译成功")
         except gpu.types.GPUShaderCompilationError as e:
-            self.report({'ERROR'}, f"display_offscreen 着色器编译失败: {e}")
-            print(f"display_offscreen 着色器编译失败: {e}")
+            self.report({'ERROR'}, f"Display offscreen shader compilation failed: {e}")
+            print(f"Display offscreen shader compilation failed: {e}")
             self.display_shader = None
             return False
         except Exception as e:
-            self.report({'ERROR'}, f"display_offscreen 着色器初始化失败: {e}")
-            print(f"display_offscreen 着色器初始化失败: {e}")
+            self.report({'ERROR'}, f"Display offscreen shader initialization failed: {e}")
+            print(f"Display offscreen shader initialization failed: {e}")
             self.display_shader = None
             return False
 
-        # 定义顶点和索引，用于绘制显示纹理
+        # Define vertices and indices for displaying texture
         vertices = [
             (-1, -1, 0, 0),  # Bottom-left
             (1, -1, 1, 0),  # Bottom-right
@@ -1475,17 +1423,16 @@ class LFDPreviewOperator(bpy.types.Operator):
         return True
 
     def setup_clear_shader(self):
-        """创建用于清除颜色缓冲区的简单着色器"""
-        # 使用内置的 'UNIFORM_COLOR' 着色器
+        """Create simple shader for clearing color buffer"""
+        # Use built-in 'UNIFORM_COLOR' shader
         self.clear_shader = gpu.shader.from_builtin('UNIFORM_COLOR')
         self.clear_batch = batch_for_shader(
             self.clear_shader, 'TRI_FAN',
             {"pos": [(-1, -1), (1, -1), (1, 1), (-1, 1)]}
         )
-        # print("清除着色器和批处理创建成功")
 
     def __update_matrices(self, context):
-        """更新视图和投影矩阵"""
+        """Update view and projection matrices"""
         camera = context.scene.camera
         if camera:
             depsgraph = context.evaluated_depsgraph_get()
@@ -1497,19 +1444,18 @@ class LFDPreviewOperator(bpy.types.Operator):
                 scale_x=1.0,
                 scale_y=1.0
             )
-            # print("矩阵更新成功")
         else:
-            self.report({'ERROR'}, "场景中未找到相机！")
-            print("场景中未找到相机！")
+            self.report({'ERROR'}, "No camera found in scene!")
+            print("No camera found in scene!")
 
     def render_quilt(self, context):
-        """渲染并拼接纹理到 final_offscreen"""
+        """Render and combine textures to final_offscreen"""
         self.__update_matrices(context)
         context.area.tag_redraw()
 
-        # 绑定 final_offscreen 以进行拼接
+        # Bind final_offscreen for texture combination
         with self.final_offscreen.bind():
-            # 获取当前的投影矩阵
+            # Get current projection matrix
             viewMatrix = gpu.matrix.get_model_view_matrix()
             projectionMatrix = gpu.matrix.get_projection_matrix()
 
@@ -1519,18 +1465,18 @@ class LFDPreviewOperator(bpy.types.Operator):
             # camera_size = f * math.tan(fov / 2)
 
             with gpu.matrix.push_pop():
-                # 重置矩阵 -> 使用标准设备坐标 [-1, 1]
+                # Reset matrix -> Use standard device coordinates [-1, 1]
                 gpu.matrix.load_matrix(Matrix.Identity(4))
                 gpu.matrix.load_projection_matrix(Matrix.Identity(4))
 
-                # 设置混合和深度状态
+                # Set blend and depth states
                 gpu.state.depth_test_set('GREATER_EQUAL')
                 gpu.state.depth_mask_set(True)
                 gpu.state.blend_set('ALPHA')
 
-                # 清除 final_offscreen 的颜色缓冲区
+                # Clear color buffer of final_offscreen
                 self.clear_shader.bind()
-                self.clear_shader.uniform_float("color", (0.0, 0.0, 0.0, 1.0))  # 设置清除颜色为黑色
+                self.clear_shader.uniform_float("color", (0.0, 0.0, 0.0, 1.0))  # Set clear color to black
                 self.clear_batch.draw(self.clear_shader)
 
                 start_time = time.time()
@@ -1542,7 +1488,7 @@ class LFDPreviewOperator(bpy.types.Operator):
                     x_offset = col * self.render_width
                     y_offset = row * self.render_height
 
-                    # 计算中心位置在 NDC 中的坐标
+                    # Calculate center position in NDC coordinates
                     center_x = (x_offset + self.render_width / 2) / self.final_width * 2 - 1
                     center_y = (y_offset + self.render_height / 2) / self.final_height * 2 - 1
                     cameraDistance = context.scene.focal_plane
@@ -1551,12 +1497,12 @@ class LFDPreviewOperator(bpy.types.Operator):
                     offsetAngle = (0.5 - idx / (40 - 1)) * math.radians(40)
                     # offset = - f * math.tan(offsetAngle)
                     offset = cameraDistance * math.tan(offsetAngle)
-                    # 计算新的view matrix
+                    # Calculate new view matrix
                     # direction = self.view_matrix.col[2].xyz.normalized()
                     # new_offset = direction * offset
                     new_view_matrix = Matrix.Translation((offset, 0, 0)) @ self.view_matrix
                     # new_view_matrix = self.view_matrix.copy()
-                    # 计算新的projection matrix
+                    # Calculate new projection matrix
                     new_projection_matrix = self.projection_matrix.copy()
                     new_projection_matrix[0][2] += offset / (cameraSize * (1440 / 2560))
 
@@ -1570,10 +1516,10 @@ class LFDPreviewOperator(bpy.types.Operator):
                     new_projection_matrix[2][3] = clip_2
 
                     # print(f"fov={fov}, f={f}, near={near},clip1={clip_1},clip2={clip_2} offsetAngle={offsetAngle}, offset={offset}")
-                    # print(f"第{idx + 1}个纹理，viewMatrix为{new_view_matrix},projectionMatrix为{new_projection_matrix}")
-                    # print(f"渲染第 {idx + 1} 张纹理，位置: ({x_offset}, {y_offset})")
+                    # print(f"Texture {idx + 1}, viewMatrix={new_view_matrix},projectionMatrix={new_projection_matrix}")
+                    # print(f"Rendering texture {idx + 1}, position: ({x_offset}, {y_offset})")
 
-                    # 渲染到单个 offscreen
+                    # Render to single offscreen
                     with self.offscreen.bind():
                         self.offscreen.draw_view3d(
                             scene=context.scene,
@@ -1584,7 +1530,7 @@ class LFDPreviewOperator(bpy.types.Operator):
                             projection_matrix=new_projection_matrix
                         )
 
-                    # 绘制单个纹理到 final_offscreen 的指定位置
+                    # Draw single texture to specified position in final_offscreen
                     self.shader.bind()
                     self.shader.uniform_sampler("image", self.offscreen.texture_color)
                     self.shader.uniform_float("scale", (
@@ -1593,34 +1539,34 @@ class LFDPreviewOperator(bpy.types.Operator):
                     self.batch.draw(self.shader)
                     gpu.shader.unbind()
 
-                # 重置混合模式和深度状态
+                # Reset blend mode and depth states
                 gpu.state.blend_set('NONE')
                 gpu.state.depth_mask_set(False)
                 gpu.state.depth_test_set('NONE')
 
-                # 重新加载原始矩阵
+                # Reload original matrices
                 gpu.matrix.load_matrix(viewMatrix)
                 gpu.matrix.load_projection_matrix(projectionMatrix)
 
                 end_time = time.time()
-                # print(f"渲染并拼接 {self.grid_rows * self.grid_cols} 张纹理耗时: {end_time - start_time:.6f} 秒")
+                # print(f"Rendering and combining {self.grid_rows * self.grid_cols} textures took: {end_time - start_time:.6f} seconds")
 
     def draw_callback_px(self, context, region):
-        """在视口中绘制拼接后的纹理"""
+        """Draw combined texture in viewport"""
         if self.display_offscreen:
-            # 设置视口绘制区域
+            # Set viewport drawing area
             draw_x = 0
             draw_y = 0
-            draw_width = 1440  # 根据需要调整显示大小
-            draw_height = 2560  # 直接设定为固定高度
+            draw_width = 1440  # Adjust display size as needed
+            draw_height = 2560  # Fixed height
 
-            # 绘制 final_offscreen 的纹理到 display_offscreen
+            # Draw final_offscreen texture to display_offscreen
             with self.display_offscreen.bind():
                 if self.display_shader:
                     try:
                         self.display_shader.bind()
                         self.display_shader.uniform_sampler("image1", self.final_offscreen.texture_color)
-                        self.display_shader.uniform_float("_Slope", obliquity)  # 正确的 uniform 设置
+                        self.display_shader.uniform_float("_Slope", obliquity)  # Correct uniform setting
                         self.display_shader.uniform_float("_Interval", linenumber)
                         self.display_shader.uniform_float("_X0", deviation)
                         self.display_shader.uniform_float("_ImgsCountX", 8.0)
@@ -1631,31 +1577,31 @@ class LFDPreviewOperator(bpy.types.Operator):
                         self.display_batch.draw(self.display_shader)
                         gpu.shader.unbind()
                     except Exception as e:
-                        print(f"绘制 display_shader 时出错: {e}")
+                        print(f"Error drawing display_shader: {e}")
                 else:
-                    print("display_shader 未初始化，无法绑定。")
+                    print("display_shader not initialized, cannot bind.")
 
-            # 假设参数
+            # Assumed parameters
             np.set_printoptions(threshold=np.inf)
             s = time.time()
             width, height, channels = 1440, 2560, 4
-            padding = 0  # 每行有 16 字节的填充
-            stride_row = width * channels + padding  # 每行的实际字节数
+            padding = 0  # 16 bytes padding per row
+            stride_row = width * channels + padding  # Actual bytes per row
 
-            # 创建一个模拟的非连续存储的 buffer
+            # Create simulated non-contiguous buffer
             pixel_data = self.display_offscreen.texture_color.read()
 
-            # 将非连续的 buffer 转换为 numpy.array
+            # Convert non-contiguous buffer to numpy.array
             buffer_array = np.array(pixel_data, dtype=np.uint8)
 
-            # 使用 strides 构建逻辑视图
+            # Build logical view using strides
             logical_view = np.lib.stride_tricks.as_strided(
                 buffer_array,
                 shape=(height, width, channels),
                 strides=(stride_row, channels, 1)
             )
 
-            # 查看逻辑视图
+            # View logical view
             # print(logical_view.shape)
 
             # draw_texture_2d(self.final_offscreen.texture_color, (0,0), 540, 960)
@@ -1665,7 +1611,7 @@ class LFDPreviewOperator(bpy.types.Operator):
             # update_pygame_window(self.screen, rgb_data)
             update_cv_window(window_name, rgb_data)
 
-            # 图像保存
+            # Image saving
             # image = Image.fromarray(rgb_data, 'RGB')
             # image.save("D:/desktop/debug_image.png")
             e = time.time()
@@ -1680,48 +1626,48 @@ class LFDPreviewOperator(bpy.types.Operator):
         # monitors = get_monitors()
         x = context.scene.x_axis
         initialize_cv_window()
-        global operator_id
+        
         operator_id = 1
-        c_p()
-        # 判断离屏渲染
+        send_via_websockets(on_open_choice2, operator_id=operator_id, biz_type="BLENDER_CLICK")
+        # Check offscreen rendering
         if not self.setup_offscreen_rendering():
             return {'CANCELLED'}
 
-        # 判断着色器设置
+        # Check shader setup
         if not self.setup_shader():
             return {'CANCELLED'}
 
-        # 设置用于清除缓冲区的着色器
+        # Setup shader for clearing buffer
         self.setup_clear_shader()
 
-        # 设置用于显示 final_offscreen 的 display_offscreen 着色器
+        # Setup display_offscreen shader for showing final_offscreen
         if not self.setup_display_shader():
             return {'CANCELLED'}
 
-        # 渲染和拼接纹理
+        # Render and combine textures
         self.render_quilt(context)
 
-        # 添加绘制回调
+        # Add draw callback
         args = (self, context)
         self._handle = bpy.types.SpaceView3D.draw_handler_add(
             self.draw_callback_px, args, 'WINDOW', 'POST_PIXEL'
         )
 
-        # 添加定时器
-        self._timer = context.window_manager.event_timer_add((1 / self.fps), window=context.window)  # 每 0.1 秒刷新一次
+        # Add timer
+        self._timer = context.window_manager.event_timer_add((1 / self.fps), window=context.window)  # Refresh every 0.1 seconds
 
-        # 添加 modal 处理器
+        # Add modal handler
         context.window_manager.modal_handler_add(self)
 
         return {'RUNNING_MODAL'}
 
     #
     def modal(self, context, event):
-        if event.type == 'TIMER':  # 定时器触发时更新渲染
+        if event.type == 'TIMER':  # Update rendering when timer triggers
             self.render_quilt(context)
             context.area.tag_redraw()
 
-        if event.type in {'ESC'}:  # 按下 ESC 键时退出
+        if event.type in {'ESC'}:  # Exit when ESC key is pressed
             global flag
             flag = False
             self.cancel(context)
@@ -1755,10 +1701,6 @@ class LFDPreviewOperator(bpy.types.Operator):
         context.area.tag_redraw()
 
 
-    # 在execute之前执行这个方法，用作初始化
-    # def invoke(self, context, event):
-    #     # return self.execute(context), context.window_manager.invoke_props_dialog(self)
-    #     return context.window_manager.invoke_props_dialog(self)
 
 
 
@@ -1782,7 +1724,7 @@ class QuiltRenderOperator(bpy.types.Operator):
     bl_label = "Save Multiview Render Picture"
     bl_options = {'REGISTER', 'UNDO'}
 
-    # 用于跟踪渲染进度和参数的属性
+    # Properties for tracking render progress and parameters
     index: bpy.props.IntProperty(default=0)
     camera = None
     original_path = ""
@@ -1802,10 +1744,10 @@ class QuiltRenderOperator(bpy.types.Operator):
         return False
 
     def execute(self, context):
-        global operator_id
+        
         operator_id = 2
-        c_p()
-        # 保存原始参数
+        send_via_websockets(on_open_choice2, operator_id=operator_id, biz_type="BLENDER_CLICK")
+        # Save original parameters
         self.camera = context.scene.camera
         self.original_path = context.scene.my_filepath
         self.original_shift_x = self.camera.data.shift_x
@@ -1813,14 +1755,14 @@ class QuiltRenderOperator(bpy.types.Operator):
         self.original_clip_end = self.camera.data.clip_end
         self.original_focus_distance = self.camera.data.dof.focus_distance
 
-        # 设置初始相机参数
+        # Set initial camera parameters
         self.camera.data.type = 'PERSP'
         self.camera.data.dof.use_dof = True
         self.camera.data.clip_start = context.scene.clip_near
         self.camera.data.clip_end = context.scene.clip_far
         self.camera.data.dof.focus_distance = context.scene.focal_plane
 
-        # 计算必要矩阵
+        # Calculate necessary matrices
         depsgraph = context.evaluated_depsgraph_get()
         self.view_matrix = self.camera.matrix_world.inverted()
         projection_matrix = self.camera.calc_matrix_camera(
@@ -1834,7 +1776,7 @@ class QuiltRenderOperator(bpy.types.Operator):
         self.cameraSize = context.scene.focal_plane * math.tan(fov / 2)
         self.focal_plane = context.scene.focal_plane
 
-        # 初始化进度条和模态循环
+        # Initialize progress bar and modal loop
         self.index = 0
         context.window_manager.progress_begin(0, 40)
         self._timer = context.window_manager.event_timer_add(0.0001, window=context.window)
@@ -1842,7 +1784,7 @@ class QuiltRenderOperator(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def cleanup(self, context):
-        """恢复原始设置并结束渲染"""
+        """Restore original settings and end rendering"""
         self.camera.data.clip_start = self.original_clip_start
         self.camera.data.clip_end = self.original_clip_end
         self.camera.data.dof.focus_distance = self.original_focus_distance
@@ -1854,7 +1796,7 @@ class QuiltRenderOperator(bpy.types.Operator):
 
     def modal(self, context, event):
         if event.type == 'ESC':
-            # 清理原始设置并结束渲染
+            # Clean up original settings and end rendering
             self.cleanup(context)
             self.report({"INFO"}, "Render Cancelled")
             return {'CANCELLED'}
@@ -1864,30 +1806,30 @@ class QuiltRenderOperator(bpy.types.Operator):
 
 
         if self.index >= 40:
-            # 渲染完成，清理资源
+            # Rendering complete, clean up resources
             self.cleanup(context)
             self.report({'INFO'}, "All pictures saved successfully.")
             return {'FINISHED'}
 
-        # 计算当前视角参数
+        # Calculate current view parameters
         offsetangle = (0.5 - self.index / (40 - 1)) * math.radians(40)
         offset = self.focal_plane * offsetangle
         new_view_matrix = Matrix.Translation((offset, 0, 0)) @ self.view_matrix
 
-        # 更新相机位置和参数
+        # Update camera position and parameters
         self.camera.matrix_world = new_view_matrix.inverted()
         self.camera.data.shift_x = self.original_shift_x + 0.5 * offset / self.cameraSize
 
-        # 设置渲染路径并执行渲染
+        # Set render path and execute rendering
         output_path = f"{self.original_path}_{self.index:03d}.png"
         context.scene.render.filepath = output_path
         bpy.ops.render.render(write_still=True)
 
-        # 更新进度并准备下一帧
+        # Update progress and prepare next frame
         context.window_manager.progress_update(self.index)
         self.index += 1
 
-        # 允许界面刷新
+        # Allow interface refresh
         context.area.tag_redraw()
         return {'RUNNING_MODAL'}
 
@@ -1898,7 +1840,7 @@ class QuiltSaveOperator1(bpy.types.Operator):
     bl_label = "Synthesize Quilt Picture"
     bl_options = {'REGISTER', 'UNDO'}
 
-    # 执行操作的前提
+    # Prerequisites for rendering
     @classmethod
     def poll(cls, context: bpy.types.Context):
         if context.scene.camera is not None and flag is False:
@@ -1906,9 +1848,9 @@ class QuiltSaveOperator1(bpy.types.Operator):
         return False
 
     def execute(self, context):
-        global operator_id
+        
         operator_id = 2
-        c_p()
+        send_via_websockets(on_open_choice2, operator_id=operator_id, biz_type="BLENDER_CLICK")
         original_path = context.scene.my_filepath
         original_path = os.path.normpath(original_path)
         print(original_path)
@@ -1940,102 +1882,143 @@ class QuiltSaveOperator1(bpy.types.Operator):
         return {'FINISHED'}
 
 
-message_ = "上传失败"
+message_ = "Upload failed"
 
-# 将文件内容转换为 Base64 编码
 def file_to_base64(file_path):
     with open(file_path, "rb") as file:
         file_content = file.read()
         return base64.b64encode(file_content).decode('utf-8')
 
-# 将大的数据分割成大小为 max_size 的小片
 def split_data(data, max_size):
     return [data[i:i + max_size] for i in range(0, len(data), max_size)]
 
-# WebSocket 回调函数
-def on_open_choice1(ws):
-    print("已连接到服务器")
-    # 触发数据发送
-    send_next_chunk(ws)
+def on_open_choice1(ws, data_chunks, current_chunk_index):
+    print("Connected to server")
+    send_next_chunk(ws, data_chunks, current_chunk_index)
+
+
+def on_open_choice2(ws, operator_id, biz_type):
+
+    data_type = "tracking"
+    data_to_send = {
+        "bizId": operator_id,
+        "bizType": biz_type
+    }
+
+    final_data = {
+        "type": data_type,
+        "data": data_to_send
+    }
+
+    ws.send(json.dumps(final_data))
+    ws.close()
 
 from websocket import WebSocketTimeoutException
 
-def send_next_chunk(ws):
-    global current_chunk_index  # 记录当前发送的分片索引
+def send_next_chunk(ws, data_chunks, current_chunk_index):
 
-    if current_chunk_index < len(data_chunks):
-        print(f"当前在第{current_chunk_index+1}分片,总共{len(data_chunks)}分片")
-        chunk = data_chunks[current_chunk_index]
-        # print("zheshi chunk")
-        # print(chunk)
+    if ws.sock and ws.sock.connected:
+        if current_chunk_index < len(data_chunks):
+            print(f"Currently at chunk {current_chunk_index+1}, total {len(data_chunks)} chunks")
+            chunk = data_chunks[current_chunk_index]
 
-        data_split = {
-            "type": "quilt",
-            "data": chunk,
-            "done": False  # 最后一片设置 done 为 True
-        }
-        # 打印前100个和后100个
-        print(str(data_split)[:100])
-        print(str(data_split)[-100:])
+            data_split = {
+                "type": "quilt",
+                "data": chunk,
+                "done": False
+            }
+            print(str(data_split)[:100])
+            print(str(data_split)[-100:])
 
-        # 发送分片数据
-        ws.send(json.dumps(data_split))
-        print(f"发送了第 {current_chunk_index + 1} 片数据")
-        current_chunk_index += 1
+            ws.send(json.dumps(data_split))
+            print(f"Sent chunk {current_chunk_index + 1}")
+            current_chunk_index += 1
 
-        # 继续发送下一个分片，延迟少许时间
-        time.sleep(0.1)  # 可根据需要调整延迟时间，避免过快发送影响网络
-
-        # 继续发送下一片数据
-        send_next_chunk(ws)
+            time.sleep(0.1)  
+            send_next_chunk(ws, data_chunks, current_chunk_index)
+        else:
+            done_message = {
+                "type": "quilt",
+                "data": None,
+                "done": True
+            }
+            print("Send end flag")
+            print(str(done_message)[:100])
+            ws.send(json.dumps(done_message))
+            print("Data transfer ended")
+            ws.close() 
     else:
-        # 所有数据片发送完毕后，发送结束标识
-        done_message = {
-            "type": "quilt",
-            "data": None,
-            "done": True
-        }
-        print("发送结束标识")
-        print(str(done_message)[:100])
-        ws.send(json.dumps(done_message))
-        print("数据传输结束")
-        ws.close()  # 发送结束后关闭 WebSocket 连接
+        ws.close()
+        print("Connection closed")
 
 
-# def on_close(ws, close_status_code, close_msg):
-#     # global message_
-#     # message_ = "连接已关闭"
-#     print("连接已关闭")
-#
-#
-# def on_error(ws, error):
-#     global message_
-#     message_ = f"发生错误: {error}"
-#     print(f"发生错误: {error}")
 
 
-# 主函数
+def send_via_websockets(on_open_handler, **handler_kwargs):
+    # OpenstageAI, Cubestage
+    ws_urls = ["ws://127.0.0.1:9001", "ws://127.0.0.1:9003"]
+    active_connections = []
+    connection_timeout = 5
+    
+    def ws_worker(url):
+        timeout_timer = threading.Timer(connection_timeout, lambda: ws.close() if ws.sock else None)
+        
+        def on_open(ws):
+            nonlocal timeout_timer
+            timeout_timer.cancel() 
+            for conn in active_connections:
+                if conn != ws:
+                    conn.close()
+            active_connections.append(ws)
+            on_open_handler(ws, **handler_kwargs)
+            
+        def on_close(ws, close_status_code, close_msg):
+            if ws in active_connections:
+                active_connections.remove(ws)
+            if 'timeout_timer' in locals():
+                timeout_timer.cancel()
+                
+        def on_error(ws, error):
+            print(f"{url}websocket connect error: {error}")
+            ws.close()
+            
+        ws = websocket.WebSocketApp(
+            url,
+            on_open=on_open,
+            on_message=None,
+            on_close=on_close,
+            on_error=on_error
+        )
+        
+        timeout_timer.start() 
+        ws.run_forever() 
+    
+    for url in ws_urls:
+        threading.Thread(target=ws_worker, args=(url,), daemon=True).start()
+
+
+
 def upload_file(self, file_path1 , file_path2, title):
     global message_
-    message_ = "上传失败"
+    message_ = "Upload failed"
     print(file_path1)
     if not os.path.isfile(file_path1):
-        print("封面图片不存在")
-        self.report({'INFO'}, "封面图片不存在，确保文件路径下存在_020.png")
+        print("Preview image does not exist")
+        self.report({'INFO'}, "Preview image does not exist, ensure that _020.png exists in the file path")
         return
     if not os.path.isfile(file_path2):
-        print("合成图片不存在")
-        self.report({'INFO'}, "source图片不存在,确保文件路径下存在quilt_synthesize_result.png")
+        print("Synthesized image does not exist")
+        self.report({'INFO'}, "Synthesized image does not exist, ensure that quilt_synthesize_result.png exists in the file path")
         return
 
-    # 获取文件的 MIME 类型（这里只支持 PNG 类型）
+    # Get the MIME type of the file (only PNG type is supported here)
     mime_type = "image/png"
 
-    # 将文件内容转为 Base64 编码
+    # Convert file content to Base64 encoding
     base64_string_1 = file_to_base64(file_path1)
     base64_string_2 = file_to_base64(file_path2)
 
-    # 创建要发送的数据对象
+    # Create data object to send
     data_to_send = {
         "previewFile": f"data:{mime_type};base64,{base64_string_1}",
         "previewFileName": os.path.basename(file_path1),
@@ -2046,27 +2029,13 @@ def upload_file(self, file_path1 , file_path2, title):
         "title": title
     }
 
-    # 序列化整个 data_to_send 对象为 JSON 字符串
     json_data = json.dumps(data_to_send)
 
-    # 获取 Base64 字符串并分片
-    global data_chunks
-    data_chunks = split_data(json_data, 1024 * 1024)  # 分片大小为 1MB
+    data_chunks = split_data(json_data, 1024 * 1024)  # Split size is 1MB
 
-    # 设置分片的索引
-    global current_chunk_index
     current_chunk_index = 0
 
-    # 连接到 WebSocket 服务器
-    ws_url = "ws://127.0.0.1:9001"  # 服务器地址
-    ws = websocket.WebSocketApp(ws_url,
-                                on_open=on_open_choice1,
-                                on_message=None,
-                                on_close=None,
-                                on_error=None)
-
-    # 启动 WebSocket 客户端
-    ws.run_forever()
+    send_via_websockets(on_open_choice1, data_chunks=data_chunks, current_chunk_index=current_chunk_index)
 
 
 class ConnectPlatform(bpy.types.Operator):
@@ -2080,7 +2049,7 @@ class ConnectPlatform(bpy.types.Operator):
         description="set the title of the picture",
         default="default",
     )
-    # 执行操作的前提
+    # Prerequisites for rendering
     @classmethod
     def poll(cls, context: bpy.types.Context):
         if context.scene.camera is not None and flag is False:
@@ -2089,11 +2058,10 @@ class ConnectPlatform(bpy.types.Operator):
 
 
     def execute(self, context):
-        global operator_id
+        
         operator_id = 3
-        c_p()
+        send_via_websockets(on_open_choice2, operator_id=operator_id, biz_type="BLENDER_CLICK")
         print(self.title)
-        # file_path = "D:/desktop/temp/quilt_result.png"  # 替换为你的 PNG 文件路径
         fp = bpy.context.scene.my_filepath
         fp1 = os.path.join(fp,"_020.png")
         fp2 = os.path.join(fp,"quilt_synthesize_result.png")
@@ -2120,17 +2088,17 @@ class RenderAnimation(bpy.types.Operator):
         return False
 
     def execute(self, context):
-        global operator_id
+        
         operator_id = 4
-        c_p()
-        # 获取文件路径
+        send_via_websockets(on_open_choice2, operator_id=operator_id, biz_type="BLENDER_CLICK")
+        # Get file path
         output_path = context.scene.my_filepath
 
-        # 设置输出路径，确保目录存在
+        # Set output path, ensure directory exists
         if output_path:
             context.scene.render.filepath = output_path
 
-            # 设置渲染为静态图像，渲染整个动画
+            # Set render as static image, render entire animation
             bpy.ops.render.render(animation=True, write_still=True)
 
             print("Rendering animation to:", output_path)
@@ -2154,33 +2122,33 @@ class RenderImageSequenceToVideo(bpy.types.Operator):
         return False
 
     def execute(self, context):
-        global operator_id
+        
         operator_id = 4
-        c_p()
+        send_via_websockets(on_open_choice2, operator_id=operator_id, biz_type="BLENDER_CLICK")
         input_folder = context.scene.my_filepath
         output_video_path = os.path.join(input_folder, "output.mp4")
 
-        # 原有图像序列处理部分...
+        # Process existing image sequence...
         image_files = [f"quilt_frame_{i}.png" for i in range(context.scene.frame_s, context.scene.frame_e + 1)]
 
-        # 图像验证部分...
+        # Image validation...
         images = []
         for image_file in image_files:
             image_path = os.path.join(input_folder, image_file)
             if os.path.exists(image_path):
                 images.append(image_path)
             else:
-                self.report({'WARNING'}, f"文件 {image_file} 不存在，跳过。")
+                self.report({'WARNING'}, f"File {image_file} does not exist, skipping.")
 
         if not images:
-            self.report({'ERROR'}, "没有找到有效的图像文件！")
+            self.report({'ERROR'}, "No valid image files found!")
             return {'CANCELLED'}
 
-        # FFmpeg路径
+        # FFmpeg path
         # ffmpeg_path = rf"D:\desktop\wheels\ffmpeg\bin\ffmpeg.exe"
         ffmpeg_path = rf"{path[1]}\addons\CubeVi_Swizzle_Blender\wheels\ffmpeg\bin\ffmpeg.exe"
 
-        # 视频渲染命令
+        # Video rendering command
         image_sequence_path = os.path.join(input_folder, f"quilt_frame_%d.png")
         render_command = [
             ffmpeg_path,
@@ -2197,35 +2165,35 @@ class RenderImageSequenceToVideo(bpy.types.Operator):
             output_video_path
         ]
 
-        # 执行视频渲染
+        # Execute video rendering
         try:
             subprocess.run(render_command, check=True)
         except subprocess.CalledProcessError as e:
-            self.report({'ERROR'}, f"视频渲染失败: {str(e)}")
+            self.report({'ERROR'}, f"Video rendering failed: {str(e)}")
             return {'CANCELLED'}
 
-        # 生成封面图
+        # Generate cover image
         cover_path = os.path.join(input_folder, "cover.png")
         cover_command = [
             ffmpeg_path,
             '-i', output_video_path,
-            '-vf', 'crop=540:960:0:0',  # 裁剪左上角540x960区域
-            '-vframes', '1',           # 只处理第一帧
-            '-y',                      # 覆盖已有文件
+            '-vf', 'crop=540:960:0:0',  # Crop the top-left 540x960 region
+            '-vframes', '1',           # Process only the first frame
+            '-y',                      # Overwrite existing files
             cover_path
         ]
 
         try:
             subprocess.run(cover_command, check=True)
             if os.path.exists(cover_path):
-                self.report({'INFO'}, f"封面图已保存到: {cover_path}")
+                self.report({'INFO'}, f"Preview image saved to: {cover_path}")
             else:
-                self.report({'WARNING'}, "封面图生成失败")
+                self.report({'WARNING'}, "Preview image generation failed")
         except subprocess.CalledProcessError as e:
-            self.report({'ERROR'}, f"封面图生成失败: {str(e)}")
+            self.report({'ERROR'}, f"Preview image generation failed: {str(e)}")
             return {'CANCELLED'}
 
-        self.report({'INFO'}, f"视频已保存到: {output_video_path}")
+        self.report({'INFO'}, f"Video saved to: {output_video_path}")
         return {'FINISHED'}
 
 
@@ -2249,7 +2217,7 @@ class RenderAnimation1(bpy.types.Operator):
     focal_plane = 0.0
     _timer = None
     index_ = 0
-    cancel_render = False  # 标记是否取消渲染
+    cancel_render = False  # Flag to mark if rendering is canceled
 
     @classmethod
     def poll(cls, context: bpy.types.Context):
@@ -2258,9 +2226,9 @@ class RenderAnimation1(bpy.types.Operator):
         return False
 
     def execute(self, context):
-        global operator_id
+        
         operator_id = 4
-        c_p()
+        send_via_websockets(on_open_choice2, operator_id=operator_id, biz_type="BLENDER_CLICK")
         scene = bpy.context.scene
         frame_start = scene.frame_s
         frame_end = scene.frame_e
@@ -2268,7 +2236,7 @@ class RenderAnimation1(bpy.types.Operator):
         if frame_start <= frame_end:
 
             bpy.context.scene.frame_current = frame_start
-            # 保存原始参数
+            # Save original parameters
             self.camera = context.scene.camera
             self.original_path = context.scene.my_filepath
             self.original_shift_x = self.camera.data.shift_x
@@ -2276,14 +2244,12 @@ class RenderAnimation1(bpy.types.Operator):
             self.original_clip_end = self.camera.data.clip_end
             self.original_focus_distance = self.camera.data.dof.focus_distance
 
-            # 设置初始相机参数
             self.camera.data.type = 'PERSP'
             self.camera.data.dof.use_dof = True
             self.camera.data.clip_start = context.scene.clip_near
             self.camera.data.clip_end = context.scene.clip_far
             self.camera.data.dof.focus_distance = context.scene.focal_plane
 
-            # 计算必要矩阵
             depsgraph = context.evaluated_depsgraph_get()
             self.view_matrix = self.camera.matrix_world.inverted()
             projection_matrix = self.camera.calc_matrix_camera(
@@ -2297,9 +2263,9 @@ class RenderAnimation1(bpy.types.Operator):
             self.cameraSize = context.scene.focal_plane * math.tan(fov / 2)
             self.focal_plane = context.scene.focal_plane
 
-            # 初始化进度条和模态循环
+            # Initialize progress bar and modal loop
             self.index = 0
-            context.window_manager.progress_begin(0, 40)  # 渲染每帧 40 张图
+            context.window_manager.progress_begin(0, 40)  # Render 40 images per frame
             self._timer = context.window_manager.event_timer_add(0.0001, window=context.window)
             context.window_manager.modal_handler_add(self)
 
@@ -2310,7 +2276,7 @@ class RenderAnimation1(bpy.types.Operator):
 
     def modal(self, context, event):
         if event.type == 'ESC':
-            # 监听 ESC 键按下，取消渲染
+            # Listen for ESC key press to cancel rendering
             self.cancel_render = True
 
         if event.type != 'TIMER':
@@ -2318,30 +2284,28 @@ class RenderAnimation1(bpy.types.Operator):
 
         scene = bpy.context.scene
 
-        if self.cancel_render:  # 检查是否需要取消渲染
+        if self.cancel_render: 
             self.cleanup(context)
             self.report({"INFO"}, "Render was cancelled.")
             return {'CANCELLED'}
 
-        if scene.frame_current > scene.frame_e:  # 如果当前帧大于结束帧，则结束渲染
+        if scene.frame_current > scene.frame_e:
             self.cleanup(context)
             self.report({'INFO'}, "All frames rendered successfully.")
             return {'FINISHED'}
 
-        if self.index >= 40:  # 每帧渲染 40 张图像后，合成并保存
-            # 合成所有的 40 张图片成一张大图
+        if self.index >= 40:  
             original_path = context.scene.my_filepath
             original_path = os.path.normpath(original_path)
             print(original_path)
             single_width = 540
             single_height = 960
-            rows = 5  # 5 行
-            cols = 8  # 8 列
+            rows = 5
+            cols = 8
             width = single_width * cols
             height = single_height * rows
             new_image = Image.new('RGB', (width, height))
 
-            # 遍历所有图片并合成
             for i in range(rows):
                 for j in range(cols):
                     image_filename = f"_{i * cols + j:03d}.png"
@@ -2354,13 +2318,12 @@ class RenderAnimation1(bpy.types.Operator):
 
                     new_image.paste(img, (left, upper, right, lower))
 
-            # 保存合成后的图像
             output_path = os.path.join(original_path, f"quilt_frame_{scene.frame_current}.png")
             new_image.save(output_path)
             self.index_ += 1
             self.report({'INFO'}, f"Quilt synthesize successfully, path is {output_path}")
 
-            # 删除已渲染的 40 张单张图片
+            # Delete the 40 rendered single images
             for i in range(40):
                 file_name = f"{original_path}\_{i:03d}.png"
                 if os.path.exists(file_name):
@@ -2369,37 +2332,31 @@ class RenderAnimation1(bpy.types.Operator):
                 else:
                     print(f"File not found: {file_name}")
 
-            # 跳转到下一帧
-            scene.frame_current += 1  # 跳到下一帧
-            self.index = 0  # 重置索引以开始渲染新的 40 张图像
+            scene.frame_current += 1  
+            self.index = 0 
 
             context.window_manager.progress_update(self.index)
             return {'RUNNING_MODAL'}
 
-        # 计算当前视角参数
         offsetangle = (0.5 - self.index / (40 - 1)) * math.radians(40)
         offset = self.focal_plane * offsetangle
         new_view_matrix = Matrix.Translation((offset, 0, 0)) @ self.view_matrix
 
-        # 更新相机位置和参数
         self.camera.matrix_world = new_view_matrix.inverted()
         self.camera.data.shift_x = self.original_shift_x + 0.5 * offset / self.cameraSize
 
-        # 设置渲染路径并执行渲染
         output_path = f"{self.original_path}_{self.index:03d}.png"
         context.scene.render.filepath = output_path
         bpy.ops.render.render(write_still=True)
 
-        # 更新进度并准备下一帧
         context.window_manager.progress_update(self.index)
         self.index += 1
 
-        # 允许界面刷新
         context.area.tag_redraw()
         return {'RUNNING_MODAL'}
 
     def cleanup(self, context):
-        """恢复原始设置并结束渲染"""
+        """Reset camera settings and end rendering"""
         self.camera.data.clip_start = self.original_clip_start
         self.camera.data.clip_end = self.original_clip_end
         self.camera.data.dof.focus_distance = self.original_focus_distance
@@ -2415,25 +2372,23 @@ class RenderAnimation1(bpy.types.Operator):
 # 主函数
 def upload_file_video(self, file_path1 , file_path2, title):
     global message_
-    message_ = "上传失败"
+    message_ = "Upload failed"
     print(file_path1)
     if not os.path.isfile(file_path1):
-        print("封面图片不存在")
-        self.report({'INFO'}, "封面图片不存在，确保文件路径下存在cover.png")
+        print("Preview image does not exist")
+        self.report({'INFO'}, "Preview image does not exist, ensure that cover.png exists in the file path")
         return
     if not os.path.isfile(file_path2):
-        print("视频不存在")
-        self.report({'INFO'}, "视频不存在,确保文件路径下存在output.mp4")
+        print("Video does not exist")
+        self.report({'INFO'}, "Video does not exist, ensure that output.mp4 exists in the file path")
         return
 
-    # 获取文件的 MIME 类型（这里只支持 PNG 类型）
+    # Get the MIME type of the file (only PNG type is supported here)
     mime_type = "video/mp4"
 
-    # 将文件内容转为 Base64 编码
     base64_string_1 = file_to_base64(file_path1)
     base64_string_2 = file_to_base64(file_path2)
 
-    # 创建要发送的数据对象
     data_to_send = {
         "previewFile": f"data:{mime_type};base64,{base64_string_1}",
         "previewFileName": os.path.basename(file_path1),
@@ -2444,27 +2399,15 @@ def upload_file_video(self, file_path1 , file_path2, title):
         "title": title
     }
 
-    # 序列化整个 data_to_send 对象为 JSON 字符串
     json_data = json.dumps(data_to_send)
 
-    # 获取 Base64 字符串并分片
-    global data_chunks
-    data_chunks = split_data(json_data, 1024 * 1024)  # 分片大小为 1MB
+    
+    data_chunks = split_data(json_data, 1024 * 1024)  # Split size is 1MB
 
-    # 设置分片的索引
-    global current_chunk_index
+    
     current_chunk_index = 0
 
-    # 连接到 WebSocket 服务器
-    ws_url = "ws://127.0.0.1:9001"  # 服务器地址
-    ws = websocket.WebSocketApp(ws_url,
-                                on_open=on_open_choice1,
-                                on_message=None,
-                                on_close=None,
-                                on_error=None)
-
-    # 启动 WebSocket 客户端
-    ws.run_forever()
+    send_via_websockets(on_open_choice1, data_chunks=data_chunks, current_chunk_index=current_chunk_index)
 
 
 class ConnectVideoPlatform(bpy.types.Operator):
@@ -2488,11 +2431,10 @@ class ConnectVideoPlatform(bpy.types.Operator):
 
 
     def execute(self, context):
-        global operator_id
+        
         operator_id = 5
-        c_p()
+        send_via_websockets(on_open_choice2, operator_id=operator_id, biz_type="BLENDER_CLICK")
         print(self.title)
-        # file_path = "D:/desktop/temp/quilt_result.png"  # 替换为你的 PNG 文件路径
         fp = bpy.context.scene.my_filepath
         fp1 = os.path.join(fp,"cover.png")
         fp2 = os.path.join(fp,"output.mp4")

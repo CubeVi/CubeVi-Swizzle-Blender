@@ -63,7 +63,7 @@ Select Install from Disk from the small arrow in the upper right corner of Prefe
 
 **Device Connection:**
 
-Connect the display, open OpenStageAI and update to the latest version 2.0.1 or above (needs to remain open), and ensure the device is recognized. 
+Connect the display, open Cubestage and update to the latest version 2.0.1 or above (needs to remain open), and ensure the device is recognized. 
 
 ![](img/image_11.png)
 
@@ -164,7 +164,7 @@ A: Press the Esc key in the Blender interface.
 
 Q: Clicking Device Connection shows "Connection Failed".
 
-A: Ensure OpenStageAI is open and the device is recognized.
+A: Ensure Cubestage is open and the device is recognized.
 
 Q: There are some black lines in the view.
 

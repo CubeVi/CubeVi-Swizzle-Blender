@@ -17,7 +17,7 @@ bl_info = {
     "name": "CubeVi_Swizzle_Blender",
     "author": "CubeVi",
     "blender": (3, 4, 0),
-    "version": (2, 0, 0),
+    "version": (2, 0, 1),
     "description": "Blender lightfield SDK by CubeVi",
     "doc_url": "",
     "tracker_url": "",

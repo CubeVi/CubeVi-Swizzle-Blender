@@ -1,6 +1,6 @@
 # ##### BEGIN GPL LICENSE BLOCK #####
 #
-#  Copyright © GJQ, OpenStageAI
+#  Copyright © GJQ, OpenstageAI, Cubestage
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -17,13 +17,13 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
-from .addons.blender_preview import register as addon_register, unregister as addon_unregister
+from .addons.CubeVi_Swizzle_Blender import register as addon_register, unregister as addon_unregister
 
 bl_info = {
     "name": "CubeVi_Swizzle_Blender",
     "author": "CubeVi",
     "blender": (3, 4, 0),
-    "version": (2, 0, 0),
+    "version": (2, 0, 1),
     "description": "Blender lightfield SDK by CubeVi",
     "doc_url": "",
     "tracker_url": "",

@@ -1,4 +1,4 @@
-from common.i18n.dictionary import preprocess_dictionary
+from CubeVi_Swizzle_Blender.common.i18n.dictionary import preprocess_dictionary
 
 dictionary = {
     "zh_CN": {
